@@ -1,6 +1,6 @@
 # EE2E Messenger writed on C++.
 
-![Project Status](https://img.shields.io/badge/in-development)
+![Project Status](https://img.shields.io/badge/in_development)
 
 ![C++](https://img.shields.io/badge/C++-17-blue?logo=cplusplus&logoColor=white)
 ![SDL2](https://img.shields.io/badge/SDL2-2.x-orange)
