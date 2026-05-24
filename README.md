@@ -2,8 +2,6 @@
 
 ![Project Status](https://img.shields.io/badge/id_development-now)
 
-![C++](https://img.shields.io/badge/C++-17-blue?logo=cplusplus&logoColor=white)
-![SDL2](https://img.shields.io/badge/SDL2-2.x-orange)
 ![Boost.Asio](https://img.shields.io/badge/Boost.Asio-1.74+-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
