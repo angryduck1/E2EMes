@@ -5,11 +5,14 @@
 #include <boost/asio.hpp>
 #include "cryption.h"
 #include <unordered_map>
+#include <fstream>
 #include <iostream>
-#include <thread>
+#include <nlohmann/json.hpp>
 
 using namespace std;
 using namespace boost::asio;
+
+using json = nlohmann::json;
 
 using ip::tcp;
 

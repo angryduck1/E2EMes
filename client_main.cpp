@@ -101,60 +101,96 @@ vector<unsigned char> pack_data(json data_json) {
     return data;
 }
 
-string generate_session_token(const string& filename) {
-    const size_t BASE_TOKEN_LEN = 48;
-    const size_t VARIANT = sodium_base64_VARIANT_URLSAFE_NO_PADDING;
-
-    const size_t B64_LEN = sodium_base64_ENCODED_LEN(BASE_TOKEN_LEN, VARIANT);
-
-    unsigned char bin_buffer[BASE_TOKEN_LEN];
-    string b64_buffer(B64_LEN, '\0');
-
-    randombytes_buf(bin_buffer, BASE_TOKEN_LEN);
-
-    sodium_bin2base64(b64_buffer.data(), B64_LEN, bin_buffer, BASE_TOKEN_LEN, VARIANT);
-
-    if (!b64_buffer.empty() && b64_buffer.back() == '\0') {
-        b64_buffer.pop_back();
-    }
-
-    ofstream file(filename);
-    if (!file) {
-        throw runtime_error("Error opening file to save session");
-    }
-
-    file << b64_buffer;
-
-    file.close();
-
-    return b64_buffer;
-}
-
-string load_session_token(const string& file_name) {
-    ifstream file(file_name);
-
-    if (file.is_open()) {
-        stringstream buffer;
-        buffer << file.rdbuf();
-        string content = buffer.str();
-
-        return content;
-    }
-
-    return "";
-}
-
 void save_session_token(const string& file_name, string token_id) {
-    ofstream file(file_name);
+    string password;
+
+    while (true) {
+        cout << "Enter the session password: " << endl;
+        cin >> password;
+
+        if (password.size() < 10) {
+            cout << "Password is too low, need more than 10 symbols." << endl;
+        } else {
+            break;
+        }
+    }
+
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
+
+    unsigned char salt[crypto_pwhash_SALTBYTES];
+    randombytes_buf(salt, crypto_pwhash_SALTBYTES);
+
+    vector <unsigned char> password_hash(crypto_secretbox_KEYBYTES);
+
+    if (crypto_pwhash(password_hash.data(), password_hash.size(), password.data(), password.size(), salt, crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE, crypto_pwhash_ALG_DEFAULT) != 0) {
+        throw runtime_error("Memory overflow");
+    }
+
+    sodium_memzero(&password[0], password.size());
+
+    vector<unsigned char> encrypted_session(token_id.size() + crypto_secretbox_MACBYTES);
+
+    crypto_secretbox_easy(encrypted_session.data(), reinterpret_cast<const unsigned char*>(token_id.data()), token_id.size(), nonce, password_hash.data());
+
+    ofstream file(file_name, ios::out | ios::binary);
 
     if (file.is_open()) {
-        file << token_id;
+        file.write(reinterpret_cast<const char*>(nonce), crypto_secretbox_NONCEBYTES);
+        file.write(reinterpret_cast<const char*>(salt), crypto_pwhash_SALTBYTES);
+        file.write(reinterpret_cast<const char*>(encrypted_session.data()), encrypted_session.size());
     } else {
         throw runtime_error("Failed to save session token!");
     }
 
     file.close();
 }
+
+string load_session_token(const string& file_name) {
+    ifstream file(file_name, ios::binary | ios::ate);
+
+    if (!file.is_open()) {
+        return "";
+    }
+
+    streamsize file_size = file.tellg();
+
+    if (file_size < static_cast<streamsize>(crypto_secretbox_NONCEBYTES + crypto_pwhash_SALTBYTES + crypto_secretbox_MACBYTES)) {
+        throw runtime_error("Invalid structure of session token!");
+    }
+
+    file.seekg(0, std::ios::beg);
+
+    string password;
+    cout << "Enter the session password: " << endl;
+    cin >> password;
+
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    unsigned char salt[crypto_pwhash_SALTBYTES];
+
+    vector <unsigned char> crypted_session(file_size - crypto_secretbox_NONCEBYTES - crypto_pwhash_SALTBYTES);
+
+    file.read(reinterpret_cast<char*>(nonce), crypto_secretbox_NONCEBYTES);
+    file.read(reinterpret_cast<char*>(salt), crypto_pwhash_SALTBYTES);
+    file.read(reinterpret_cast<char*>(crypted_session.data()), crypted_session.size());
+
+    vector <unsigned char> password_hash(crypto_secretbox_KEYBYTES);
+
+    if (crypto_pwhash(password_hash.data(), password_hash.size(), password.data(), password.size(), salt, crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE, crypto_pwhash_ALG_DEFAULT) != 0) {
+        throw runtime_error("Memory overflow");
+    }
+
+    sodium_memzero(&password[0], password.size());
+
+    vector <unsigned char> decrypted_session(crypted_session.size() - crypto_secretbox_MACBYTES);
+
+    if (crypto_secretbox_open_easy(decrypted_session.data(), crypted_session.data(), crypted_session.size(), nonce, password_hash.data()) != 0) {
+        throw runtime_error("Password is invalid!");
+    }
+
+    return string(decrypted_session.begin(), decrypted_session.end());
+}
+
 
 void login(Cryption& cryption, Session& session, tcp::socket& socket) {
     vector<unsigned char> get_log = recv_package(cryption, session, socket);
@@ -178,11 +214,35 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
             json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
 
             if (id_json["status"] == "new_id" && id_json["code"] == 200) {
-                cout << id_json.dump() << endl;
                 string new_token_id = id_json["data"]["id"].get<string>();
                 save_session_token("session_token.data", new_token_id);
+                cout << "You will added to server! Welcome!" << endl;
+            } else if (id_json["status"] == "new_id" && id_json["code"] == 300)  {
+                cout << "Failed adding you to server!" << endl;
             } else {
-                throw runtime_error("Invalid signature new_id code 200");
+                throw runtime_error("Invalid signature new_id");
+            }
+        } else {
+            json current_token = {
+                {"status", "current_id"},
+                {"code", 200},
+                {"data", {{"id", token}}}
+            };
+
+            vector<unsigned char> current_token_data = pack_data(current_token);
+
+            send_package(current_token_data, cryption, session, socket);
+
+            vector<unsigned char> id_response = recv_package(cryption, session, socket);
+            json id_response_json = nlohmann::json::parse(id_response.begin(), id_response.end());
+
+            if (id_response_json["status"] == "status_id" && id_response_json["code"] == 200) {
+                cout << "You will added to server! Welcome!" << endl;
+            } else if (id_response_json["status"] == "status_id" && id_response_json["code"] == 300) {
+                cout << "Your token hasn`t been finded!" << endl;
+            }
+            else {
+                throw runtime_error("Invalid signature id_response");
             }
         }
     }

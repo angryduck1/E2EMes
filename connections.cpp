@@ -72,5 +72,3 @@ vector<unsigned char> Connections::recv_package(Cryption& cryption, Session& ses
 void Connections::add_session(string session_id,  std::shared_ptr<tcp::socket> socket_ptr, Session& session) {
     sessionIds[session_id] = make_pair(socket_ptr, session);
 }
-
-

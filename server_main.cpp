@@ -64,6 +64,61 @@ string generate_session_token() {
     return b64_buffer;
 }
 
+int add_json_session(const string& filename, string session_id) {
+    ifstream file_in(filename);
+    json data;
+
+    if (file_in.is_open()) {
+        file_in >> data;
+    } else {
+        data = {{"sessions", json::object()}};
+    }
+
+    data["sessions"][session_id] = {
+        {"status", ""},
+        {"name", ""}
+    };
+
+    file_in.close();
+
+    ofstream file_out(filename);
+
+    if (file_out.is_open()) {
+        file_out << data.dump(4);
+        file_out.close();
+
+        cout << "Session id: " << session_id << "successful added" << endl;
+
+        return 0;
+    } else {
+        cerr << "Failed to open session file!" << endl;
+
+        return -1;
+    }
+}
+
+int check_valid_session(const string& file_name, string session_id) {
+    ifstream file(file_name);
+    if (!file) {
+        cerr << "Error opening file to check valid session" << endl;
+        return -1;
+    }
+
+    string sessions;
+
+    stringstream buffer;
+    buffer << file.rdbuf();
+    string text = buffer.str();
+
+    json sessions_json = nlohmann::json::parse(text);
+
+    if (sessions_json["sessions"].contains(session_id)) {
+        return 0;
+    } else {
+        return -1;
+    }
+}
+
 void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& connections) {
     std::vector<unsigned char> client_pk(crypto_kx_PUBLICKEYBYTES);
     read(*socket, buffer(client_pk));
@@ -89,6 +144,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         string new_token_id = generate_session_token();
 
         connections.add_session(new_token_id, socket, session);
+        int add_status = add_json_session("sessions.json", new_token_id);
 
         json new_token_id_json = {
             {"status", "new_id"},
@@ -96,8 +152,29 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
             {"data", { {"id", new_token_id} }}
         };
 
+        if (add_status < 0) {
+            new_token_id_json["code"] = 300;
+        }
+
         vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
         connections.send_package(new_token_id_json_send, cryption, session, *socket);
+    } else if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "current_id") {
+        string token_id = log_id_data_resp_json["data"]["id"].get<string>();
+
+        json resp_token_id_json = {
+            {"status", "status_id"},
+            {"code", 200},
+            {"data", ""}
+        };
+
+        if (check_valid_session("sessions.json", token_id) != 0) {
+            resp_token_id_json["code"] = 300;
+        } else {
+            connections.add_session(token_id, socket, session);
+        }
+
+        vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
+        connections.send_package(resp_token_id_json_send, cryption, session, *socket);
     }
 }
 
