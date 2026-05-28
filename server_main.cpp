@@ -6,9 +6,11 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include "connections.h"
+#include <sw/redis++/redis++.h>
 
 using namespace std;
 using namespace boost::asio;
+using namespace sw::redis;
 
 using ip::tcp;
 
@@ -64,62 +66,48 @@ string generate_session_token() {
     return b64_buffer;
 }
 
-int add_json_session(const string& filename, string session_id) {
-    ifstream file_in(filename);
-    json data;
+string generate_chat_id() {
+    const size_t BASE_TOKEN_LEN = 12;
+    const size_t VARIANT = sodium_base64_VARIANT_URLSAFE_NO_PADDING;
 
-    if (file_in.is_open()) {
-        file_in >> data;
-    } else {
-        data = {{"sessions", json::object()}};
+    const size_t B64_LEN = sodium_base64_ENCODED_LEN(BASE_TOKEN_LEN, VARIANT);
+
+    unsigned char bin_buffer[BASE_TOKEN_LEN];
+    string b64_buffer(B64_LEN, '\0');
+
+    randombytes_buf(bin_buffer, BASE_TOKEN_LEN);
+
+    sodium_bin2base64(b64_buffer.data(), B64_LEN, bin_buffer, BASE_TOKEN_LEN, VARIANT);
+
+    if (!b64_buffer.empty() && b64_buffer.back() == '\0') {
+        b64_buffer.pop_back();
     }
 
-    data["sessions"][session_id] = {
-        {"status", ""},
-        {"name", ""}
-    };
-
-    file_in.close();
-
-    ofstream file_out(filename);
-
-    if (file_out.is_open()) {
-        file_out << data.dump(4);
-        file_out.close();
-
-        cout << "Session id: " << session_id << "successful added" << endl;
-
-        return 0;
-    } else {
-        cerr << "Failed to open session file!" << endl;
-
-        return -1;
-    }
+    return b64_buffer;
 }
 
-int check_valid_session(const string& file_name, string session_id) {
-    ifstream file(file_name);
-    if (!file) {
-        cerr << "Error opening file to check valid session" << endl;
-        return -1;
-    }
+void add_session_to_bd(const string& session_id, const string& chat_id, Redis& redis) {
+    redis.hset("sessions:" + session_id, "chat_id", chat_id);
+}
 
-    string sessions;
+void add_user_info_to_bd(const string& password, const string& name, const string& chat_id, const string& session_id, Redis& redis) {
+    redis.hset("chat_ids:" + chat_id, "name", name);
+    redis.hset("chat_ids:" + chat_id, "password", password);
 
-    stringstream buffer;
-    buffer << file.rdbuf();
-    string text = buffer.str();
+    redis.sadd("status:" + chat_id, session_id);
 
-    json sessions_json = nlohmann::json::parse(text);
+    redis.set("names:" + name, chat_id);
+}
 
-    if (sessions_json["sessions"].contains(session_id)) {
+int check_valid_session(const string& session_id, Redis& redis) {
+    if (redis.exists(session_id)) {
         return 0;
     } else {
         return -1;
     }
 }
 
-void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& connections) {
+void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& connections, Redis& redis) {
     std::vector<unsigned char> client_pk(crypto_kx_PUBLICKEYBYTES);
     read(*socket, buffer(client_pk));
 
@@ -141,25 +129,53 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
     json log_id_data_resp_json = nlohmann::json::parse(log_id_data_resp.begin(), log_id_data_resp.end());
 
     if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "new_id") {
-        string new_token_id = generate_session_token();
+        string new_session_id = generate_session_token();
+        string new_chat_id = generate_chat_id();
 
-        connections.add_session(new_token_id, socket, session);
-        int add_status = add_json_session("sessions.json", new_token_id);
+        connections.add_session(new_session_id, socket, session);
+
+        add_session_to_bd(new_session_id, new_chat_id, redis);
 
         json new_token_id_json = {
             {"status", "new_id"},
             {"code", 200},
-            {"data", { {"id", new_token_id} }}
+            {"data", { {"id", new_session_id} }}
         };
-
-        if (add_status < 0) {
-            new_token_id_json["code"] = 300;
-        }
 
         vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
         connections.send_package(new_token_id_json_send, cryption, session, *socket);
+
+        vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
+        json user_info_json = nlohmann::json::parse(user_info.begin(), user_info.end());
+
+        if (user_info_json["data"].contains("name") && user_info_json["data"].contains("password") && user_info_json["status"] == "user_info") {
+            string password = user_info_json["data"]["password"];
+            string name = user_info_json["data"]["name"];
+
+            add_user_info_to_bd(password, name, new_chat_id, new_session_id, redis);
+
+            json created_account = {
+                {"status", "created_account"},
+                {"code", 200},
+                {"data", ""}
+            };
+
+            vector<unsigned char> created_account_send = pack_data(created_account);
+            connections.send_package(created_account_send, cryption, session, *socket);
+        } else {
+            json created_account = {
+                {"status", "created_account"},
+                {"code", 300},
+                {"data", ""}
+            };
+
+            vector<unsigned char> created_account_send = pack_data(created_account);
+            connections.send_package(created_account_send, cryption, session, *socket);
+
+            throw exception("Invalid signature user_info");
+        }
     } else if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "current_id") {
-        string token_id = log_id_data_resp_json["data"]["id"].get<string>();
+        string token_id = log_id_data_resp_json["data"]["id"];
 
         json resp_token_id_json = {
             {"status", "status_id"},
@@ -167,14 +183,99 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
             {"data", ""}
         };
 
-        if (check_valid_session("sessions.json", token_id) != 0) {
+        if (check_valid_session(token_id, redis) != 0) {
             resp_token_id_json["code"] = 300;
-        } else {
-            connections.add_session(token_id, socket, session);
+
+            vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
+            connections.send_package(resp_token_id_json_send, cryption, session, *socket);
+
+            return;
         }
+
+        connections.add_session(token_id, socket, session);
 
         vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
         connections.send_package(resp_token_id_json_send, cryption, session, *socket);
+    } else if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "user_info_login") {
+        string password = log_id_data_resp_json["data"]["password"];
+        string name = log_id_data_resp_json["data"]["name"];
+
+        if (redis.exists("names:"+name)) {
+            string chat_id = *redis.get("names:"+name);
+            string password_chat_id = *redis.hget("chat_ids:" + chat_id, "password");
+
+            int attempts = 3;
+
+            while (attempts > 0) {
+                if (password != password_chat_id) {
+                    json reply_message_json = {
+                        {"status", "reply_message"},
+                        {"code", 400},
+                        {"data", "You have " + to_string(attempts) + " attempts"}
+                    };
+
+                    vector<unsigned char> reply_message_send = pack_data(reply_message_json);
+                    connections.send_package(reply_message_send, cryption, session, *socket);
+
+                    attempts -= 1;
+
+                    vector<unsigned char> retry_login = connections.recv_package(cryption, session, *socket);
+                    json retry_login_json = nlohmann::json::parse(retry_login);
+
+                    password = retry_login_json["data"]["password"];
+                } else {
+                    break;
+                }
+            }
+
+            if (attempts == 0) {
+                json login_message_json = {
+                    {"status", "login_message"},
+                    {"code", 300},
+                    {"data", ""}
+                };
+
+                vector<unsigned char> login_message_send = pack_data(login_message_json);
+                connections.send_package(login_message_send, cryption, session, *socket);
+            } else {
+                json login_message_json = {
+                    {"status", "login_message"},
+                    {"code", 200},
+                    {"data", ""}
+                };
+
+                vector<unsigned char> login_message_send = pack_data(login_message_json);
+                connections.send_package(login_message_send, cryption, session, *socket);
+
+                string new_session_id = generate_session_token();
+
+                connections.add_session(new_session_id, socket, session);
+
+                add_session_to_bd(new_session_id, chat_id, redis);
+                redis.sadd("status:" + chat_id, new_session_id);
+
+                json new_token_id_json = {
+                    {"status", "new_id"},
+                    {"code", 200},
+                    {"data", { {"id", new_session_id} }}
+                };
+
+                vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
+                connections.send_package(new_token_id_json_send, cryption, session, *socket);
+            }
+        } else {
+            json reply_message_json = {
+                {"status", "reply_message"},
+                {"code", 300},
+                {"data", ""}
+            };
+
+            vector<unsigned char> reply_message_send = pack_data(reply_message_json);
+            connections.send_package(reply_message_send, cryption, session, *socket);
+        }
+    }
+    else {
+        throw exception("Invalid signature session authorize");
     }
 }
 
@@ -196,6 +297,8 @@ int main() {
         cerr << "Failed read SK" << endl;
     }
 
+    Redis redis("tcp://127.0.0.1:6400");
+
     io_context io_ctx;
 
     tcp::endpoint endpoint(ip::address_v4::any(), 8088);
@@ -212,7 +315,13 @@ int main() {
             auto sock_ptr = make_shared<tcp::socket>(std::move(socket));
 
             thread new_session_thread([&, sock_ptr]() {
-               login(sock_ptr, cryption, connections);
+                try {
+                    login(sock_ptr, cryption, connections, redis);
+                } catch (const exception& e) {
+                    cout << "Error: " << e.what() << endl;
+                } catch (...) {
+                    cout << "Unknown error" << endl;
+                }
             });
 
             new_session_thread.detach();

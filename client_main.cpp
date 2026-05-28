@@ -191,40 +191,132 @@ string load_session_token(const string& file_name) {
     return string(decrypted_session.begin(), decrypted_session.end());
 }
 
-
 void login(Cryption& cryption, Session& session, tcp::socket& socket) {
     vector<unsigned char> get_log = recv_package(cryption, session, socket);
 
     json log = nlohmann::json::parse(get_log.begin(), get_log.end());
 
     if (log["status"] == "get_id" && log["code"] == 100) {
+        string login_register;
+
         string token = load_session_token("session_token.data");
         if (token == "") {
-            json new_token = {
-                {"status", "new_id"},
-                {"code", 200},
-                {"data", ""}
-            };
+            string login_register;
 
-            vector<unsigned char> new_token_data = pack_data(new_token);
+            cout << "Do you want register new account? (y/n): ";
+            cin >> login_register;
 
-            send_package(new_token_data, cryption, session, socket);
+            if (login_register == "y") {
+                json new_token = {
+                    {"status", "new_id"},
+                    {"code", 200},
+                    {"data", ""}
+                };
 
-            vector<unsigned char> id_response = recv_package(cryption, session, socket);
-            json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
+                vector<unsigned char> new_token_data = pack_data(new_token);
 
-            if (id_json["status"] == "new_id" && id_json["code"] == 200) {
-                string new_token_id = id_json["data"]["id"].get<string>();
-                save_session_token("session_token.data", new_token_id);
-                cout << "You will added to server! Welcome!" << endl;
-            } else if (id_json["status"] == "new_id" && id_json["code"] == 300)  {
-                cout << "Failed adding you to server!" << endl;
+                send_package(new_token_data, cryption, session, socket);
+
+                vector<unsigned char> id_response = recv_package(cryption, session, socket);
+                json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
+
+                if (id_json["status"] == "new_id" && id_json["code"] == 200) {
+                    string new_token_id = id_json["data"]["id"].get<string>();
+                    save_session_token("session_token.data", new_token_id);
+                    cout << "You will added to server! Welcome!" << endl;
+                } else if (id_json["status"] == "new_id" && id_json["code"] == 300)  {
+                    throw runtime_error("Failed adding you to server!");
+                } else {
+                    throw runtime_error("Invalid signature new_id");
+                }
+
+                string name = "angryduck";
+                string password = "root";
+
+                cout << "Enter name: " << endl;
+                //cin >> name;
+
+                cout << "Enter password: " << endl;
+                //cin >> password;
+
+                json user_info = {
+                    {"status", "user_info"},
+                    {"code", 200},
+                    {"data", {{"name", name}, {"password", password}, }}
+                };
+
+                vector<unsigned char> user_info_data = pack_data(user_info);
+                send_package(user_info_data, cryption, session, socket);
+
+                vector<unsigned char> user_data_response = recv_package(cryption, session, socket);
+                json user_data_response_json = nlohmann::json::parse(user_data_response);
+
+                if (user_data_response_json["status"] == "created_account" && user_data_response_json["code"] == 200) {
+                    cout << name << ", Your account was successful added to server!" << endl;
+                }
+            } else if (login_register == "n") {
+                string name = "angryduck";
+                string password = "root";
+
+                cout << "Enter name: " << endl;
+                //cin >> name;
+
+                cout << "Enter password: " << endl;
+                cin >> password;
+
+                json user_info = {
+                    {"status", "user_info_login"},
+                    {"code", 200},
+                    {"data", {{"name", name}, {"password", password}, }}
+                };
+
+                vector<unsigned char> user_info_data = pack_data(user_info);
+                send_package(user_info_data, cryption, session, socket);
+
+                bool accept = false;
+
+                while (!accept) {
+                    vector<unsigned char> login_message_response = recv_package(cryption, session, socket);
+                    json login_message_response_json = nlohmann::json::parse(login_message_response);
+
+                    if (login_message_response_json["code"] == 400) {
+                        cout << login_message_response_json["data"] << " Try enter password again: " << endl;
+
+                        string password_attempt;
+                        cin >> password_attempt;
+
+                        json user_info_attempt = {
+                            {"status", "user_info_login"},
+                            {"code", 200},
+                            {"data", {{"name", name}, {"password", password_attempt}, }}
+                        };
+
+                        vector<unsigned char> user_info_data_attempt = pack_data(user_info_attempt);
+                        send_package(user_info_data_attempt, cryption, session, socket);
+                    } else if (login_message_response_json["code"] == 300) {
+                        throw runtime_error("Entered password is incorrect");
+                    } else if (login_message_response_json["code"] == 200) {
+                        cout << name << ", welcome to account!" << endl;
+                        accept = true;
+                        break;
+                    }
+                }
+
+                vector<unsigned char> id_response = recv_package(cryption, session, socket);
+                json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
+
+                if (id_json["status"] == "new_id" && id_json["code"] == 200) {
+                    string new_token_id = id_json["data"]["id"].get<string>();
+                    save_session_token("session_token.data", new_token_id);
+                    cout << "You will added to server! Welcome!" << endl;
+                }
+
             } else {
-                throw runtime_error("Invalid signature new_id");
+                throw runtime_error("Unknown answer");
             }
         } else {
             json current_token = {
-                {"status", "current_id"},
+                {"status", "user_info"},
                 {"code", 200},
                 {"data", {{"id", token}}}
             };

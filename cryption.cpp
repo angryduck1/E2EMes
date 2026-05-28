@@ -55,7 +55,7 @@ vector<unsigned char> Cryption::decode(const std::vector<unsigned char>& message
     std::vector<unsigned char> decryption_message(message.size() - crypto_secretbox_MACBYTES);
 
     if (crypto_secretbox_open_easy(decryption_message.data(), message.data(), message.size(), nonce, session.rx) != 0) {
-        throw runtime_error("Message is corrupted");
+        throw runtime_error("Message is corrupted ");
     }
 
     return decryption_message;
