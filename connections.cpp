@@ -69,6 +69,84 @@ vector<unsigned char> Connections::recv_package(Cryption& cryption, Session& ses
     return {};
 }
 
-void Connections::add_session(string session_id,  std::shared_ptr<tcp::socket> socket_ptr, Session& session) {
-    sessionIds[session_id] = make_pair(socket_ptr, session);
+string Connections::get_chat_id(const string &session_id, Redis &redis) {
+    string chat_id = *redis.hget("sessions:" + session_id, "chat_id");
+
+    return chat_id;
+}
+
+void Connections::update_activity(const string& session_id) {
+    lock_guard<mutex> lock(mtx);
+
+    sessionIds[session_id].last_activity = std::chrono::steady_clock::now();
+}
+
+void Connections::add_session(const string& session_id,  std::shared_ptr<tcp::socket> socket_ptr, Session& session) {
+    lock_guard<mutex> lock(mtx);
+
+    sessionIds[session_id] = {socket_ptr, session, std::chrono::steady_clock::now()};
+}
+
+int Connections::new_chat(const string& session_id, string name, Redis &redis) {
+    if (redis.exists("names:"+name)) {
+        string chat_id = *redis.get("names:" + name);
+    }
+}
+
+void Connections::client_thread(const string& session_id, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket, Redis &redis) {
+    update_activity(session_id);
+    while (true) {
+        try {
+            vector<unsigned char> message = recv_package(cryption, session, *socket);
+            update_activity(session_id);
+
+            json message_json = nlohmann::json::parse(message.begin(), message.end());
+
+            if (message_json["code"] != 500) {
+
+            }
+        } catch (const system_error& e) {
+            cout << "Error connection: " << e.what() << endl;
+            break;
+        }
+    }
+}
+
+void Connections::clean_disconnected(Redis& redis) {
+    cout << "Cleaning dead sessions...." << endl;
+
+    vector<string> sessions_to_remove;
+
+    auto now = std::chrono::steady_clock::now();
+
+    {
+        lock_guard<mutex> lock(mtx);
+
+        for (auto it = sessionIds.begin(); it != sessionIds.end(); ) {
+            if (now > it->second.last_activity + std::chrono::seconds(30)) {
+                cout << "Removing " << it->first << endl;
+
+                boost::system::error_code ec;
+
+                it->second.socket->shutdown(tcp::socket::shutdown_both, ec);
+                it->second.socket->close(ec);
+
+                sessions_to_remove.push_back(it->first);
+
+                it = sessionIds.erase(it);
+            } else {
+                it++;
+            }
+        }
+    }
+
+    for (auto i : sessions_to_remove) {
+        string chat_id = get_chat_id(i, redis);
+
+        if (!chat_id.empty()) {
+            redis.srem("status:"+chat_id, i);
+        }
+    }
+
+    cout << "End Cleaning dead sessions." << endl;
 }

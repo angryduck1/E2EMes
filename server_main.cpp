@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include "connections.h"
 #include <sw/redis++/redis++.h>
+#include <chrono>
 
 using namespace std;
 using namespace boost::asio;
@@ -90,17 +91,23 @@ void add_session_to_bd(const string& session_id, const string& chat_id, Redis& r
     redis.hset("sessions:" + session_id, "chat_id", chat_id);
 }
 
-void add_user_info_to_bd(const string& password, const string& name, const string& chat_id, const string& session_id, Redis& redis) {
+void add_user_info_to_bd(const string& password, const string& name, const string& chat_id, const string& session_id, const string& hex_salt, const string& public_key, Redis& redis) {
     redis.hset("chat_ids:" + chat_id, "name", name);
     redis.hset("chat_ids:" + chat_id, "password", password);
+    redis.hset("chat_ids:" + chat_id, "salt", hex_salt);
+    redis.hset("chat_ids:" + chat_id, "public_key", public_key);
 
+    redis.sadd("status:" + chat_id, "EMPTY_SESSION_ID");
     redis.sadd("status:" + chat_id, session_id);
+
+    redis.sadd("new_chat_queue:" + chat_id, "EMPTY_CHAT_ID");
+    redis.sadd("init_queue_success:" + chat_id, "EMPTY_CHAT_ID");
 
     redis.set("names:" + name, chat_id);
 }
 
 int check_valid_session(const string& session_id, Redis& redis) {
-    if (redis.exists(session_id)) {
+    if (redis.exists("sessions:"+session_id)) {
         return 0;
     } else {
         return -1;
@@ -129,17 +136,19 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
     json log_id_data_resp_json = nlohmann::json::parse(log_id_data_resp.begin(), log_id_data_resp.end());
 
     if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "new_id") {
+        unsigned char server_salt[crypto_pwhash_SALTBYTES];
+        randombytes_buf(server_salt, crypto_pwhash_SALTBYTES);
+
+        string hex_salt(crypto_pwhash_SALTBYTES * 2, ' ');
+        sodium_bin2hex(&hex_salt[0], hex_salt.size() + 1, server_salt, crypto_pwhash_SALTBYTES);
+
         string new_session_id = generate_session_token();
         string new_chat_id = generate_chat_id();
-
-        connections.add_session(new_session_id, socket, session);
-
-        add_session_to_bd(new_session_id, new_chat_id, redis);
 
         json new_token_id_json = {
             {"status", "new_id"},
             {"code", 200},
-            {"data", { {"id", new_session_id} }}
+            {"data", { {"id", new_session_id}, {"salt", hex_salt} }}
         };
 
         vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
@@ -148,11 +157,54 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
         json user_info_json = nlohmann::json::parse(user_info.begin(), user_info.end());
 
-        if (user_info_json["data"].contains("name") && user_info_json["data"].contains("password") && user_info_json["status"] == "user_info") {
+        if (user_info_json["data"].contains("name") && user_info_json["data"].contains("password") && user_info_json["data"].contains("public_key") && user_info_json["status"] == "user_info") {
             string password = user_info_json["data"]["password"];
             string name = user_info_json["data"]["name"];
+            string public_key = user_info_json["data"]["public_key"];
 
-            add_user_info_to_bd(password, name, new_chat_id, new_session_id, redis);
+            int attempts = 5;
+
+            while (attempts > 0) {
+                if (redis.exists("names:"+name)) {
+                    json created_account = {
+                        {"status", "retype_name"},
+                        {"code", 200},
+                        {"data", "This name already exists. " + to_string(attempts) + " left."}
+                    };
+
+                    vector<unsigned char> created_account_send = pack_data(created_account);
+                    connections.send_package(created_account_send, cryption, session, *socket);
+
+                    vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
+                    json user_info_json = nlohmann::json::parse(user_info.begin(), user_info.end());
+
+                    name = user_info_json["data"]["name"];
+
+                    --attempts;
+
+                    this_thread::sleep_for(std::chrono::seconds(4));
+                } else {
+                    break;
+                }
+            }
+
+            if (attempts == 0) {
+                json timeout_message = {
+                    {"status", "timeout_exceeded"},
+                    {"code", 300},
+                    {"data", "This name already exists"}
+                };
+
+                vector<unsigned char> timeout_message_send = pack_data(timeout_message);
+
+                connections.send_package(timeout_message_send, cryption, session, *socket);
+            }
+
+            connections.add_session(new_session_id, socket, session);
+
+            add_session_to_bd(new_session_id, new_chat_id, redis);
+
+            add_user_info_to_bd(password, name, new_chat_id, new_session_id, hex_salt, public_key, redis);
 
             json created_account = {
                 {"status", "created_account"},
@@ -162,6 +214,8 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
 
             vector<unsigned char> created_account_send = pack_data(created_account);
             connections.send_package(created_account_send, cryption, session, *socket);
+
+            connections.client_thread(new_session_id, cryption, session, socket, redis);
         } else {
             json created_account = {
                 {"status", "created_account"},
@@ -196,6 +250,8 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
 
         vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
         connections.send_package(resp_token_id_json_send, cryption, session, *socket);
+
+        connections.client_thread(token_id, cryption, session, socket, redis);
     } else if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "user_info_login") {
         string password = log_id_data_resp_json["data"]["password"];
         string name = log_id_data_resp_json["data"]["name"];
@@ -254,14 +310,19 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                 add_session_to_bd(new_session_id, chat_id, redis);
                 redis.sadd("status:" + chat_id, new_session_id);
 
+                string hex_salt = *redis.hget("chat_ids:"+chat_id, "salt");
+                string public_key = *redis.hget("chat_ids:"+chat_id, "public_key");
+
                 json new_token_id_json = {
                     {"status", "new_id"},
                     {"code", 200},
-                    {"data", { {"id", new_session_id} }}
+                    {"data", { {"id", new_session_id}, {"salt", hex_salt}, {"public_key", public_key} }}
                 };
 
                 vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
                 connections.send_package(new_token_id_json_send, cryption, session, *socket);
+
+                connections.client_thread(new_session_id, cryption, session, socket, redis);
             }
         } else {
             json reply_message_json = {
@@ -276,6 +337,14 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
     }
     else {
         throw exception("Invalid signature session authorize");
+    }
+}
+
+void manage_sessions(Redis& redis, Connections& connections) {
+    while (true) {
+        this_thread::sleep_for(std::chrono::seconds(30));
+
+        connections.clean_disconnected(redis);
     }
 }
 
@@ -307,6 +376,8 @@ int main() {
 
     cout << "Server is listening on port 8088" << endl;
 
+    thread manager_thread(manage_sessions, ref(redis), ref(connections));
+
     while (true) {
         try {
             tcp::socket socket(io_ctx);
@@ -329,6 +400,8 @@ int main() {
             cout << "Server error: " << e.what() << endl;
         }
     }
+
+    manager_thread.join();
 
     return 0;
 }

@@ -28,11 +28,18 @@ target_link_libraries(server PRIVATE
 add_executable(client
         client_main.cpp
         cryption.cpp
-        cryption.h)
+        cryption.h
+        client_activity.cpp
+        client_activity.h
+        client_connection.cpp
+        client_connection.h
+        bip_39.h
+)
 
 target_link_libraries(client PRIVATE
         Boost::asio
         Boost::system
         unofficial-sodium::sodium
         nlohmann_json::nlohmann_json
+        leveldb
 )

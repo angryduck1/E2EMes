@@ -2,11 +2,12 @@
 #include <sodium.h>
 #include <boost/asio.hpp>
 #include "cryption.h"
-#include <stdint.h>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string>
-#include <sstream>
+#include "client_activity.h"
+#include "client_connection.h"
+#include "bip_39.h"
 
 using namespace std;
 using namespace boost::asio;
@@ -15,69 +16,31 @@ using ip::tcp;
 
 using json = nlohmann::json;
 
-int send_package(vector<unsigned char>& message, Cryption& cryption, Session& session, tcp::socket& socket) {
-    boost::system::error_code error;
+const int SESSION_SIZE = 64;
+const int SEED_SIZE = 12;
 
-    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+struct SessionData {
+    string session_id;
+    vector<unsigned char> private_key;
+    vector<unsigned char> public_key;
+    vector<unsigned char> password_hash;
+};
 
-    vector<unsigned char> encryption_message = cryption.encode(message, session, nonce);
+string bip_seed_generate() {
+    string word_seed;
 
-    encryption_message.insert(encryption_message.begin(), begin(nonce), end(nonce));
+    for (int i = 0; i < SEED_SIZE; i++) {
+        unsigned seed_id = randombytes_uniform(2048);
+        string word = WORDLIST.at(seed_id);
 
-    auto body_size = static_cast<uint32_t>(encryption_message.size());
-    uint32_t network_size = htonl(body_size);
-
-    unsigned char payload_size[4];
-
-    memcpy(payload_size, &network_size, 4);
-
-    encryption_message.insert(encryption_message.begin(), begin(payload_size), end(payload_size));
-
-    write(socket, buffer(encryption_message), error);
-
-    if (error) {
-        cerr << "Error send packet to client" << endl;
-        return -1;
-    }
-
-    return 0;
-}
-
-vector<unsigned char> recv_package(Cryption& cryption, Session& session, tcp::socket& socket) {
-    try {
-        vector<unsigned char> buf(4);
-
-        read(socket, buffer(buf));
-
-        uint32_t payload_size = 0;
-        memcpy(&payload_size, buf.data(), 4);
-
-        payload_size = ntohl(payload_size);
-
-        if (payload_size < 4 + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES || payload_size > 1024) {
-            cerr << "Invalid structure of payload" << endl;
-
-            return {};
+        if (i + 1 == SEED_SIZE)
+            word_seed += word;
+        else {
+            word_seed += word + " ";
         }
-
-        vector<unsigned char> payload(payload_size);
-
-        read(socket, buffer(payload));
-
-        unsigned char nonce[crypto_secretbox_NONCEBYTES];
-
-        memcpy(nonce, payload.data(), crypto_secretbox_NONCEBYTES);
-
-        payload.erase(payload.begin(), payload.begin() + crypto_secretbox_NONCEBYTES);
-
-        vector<unsigned char> decrypted_message = cryption.decode(payload, session, nonce);
-
-        return decrypted_message;
-    } catch (const system_error& e) {
-        cerr << "Network recv error: "<< e.what() << endl;
     }
 
-    return {};
+    return word_seed;
 }
 
 int load_binary_key(const string& file_name, unsigned char* key, size_t key_len) {
@@ -93,15 +56,7 @@ int load_binary_key(const string& file_name, unsigned char* key, size_t key_len)
     return 0;
 }
 
-vector<unsigned char> pack_data(json data_json) {
-    string data_str = data_json.dump();
-
-    vector<unsigned char> data(data_str.begin(), data_str.end());
-
-    return data;
-}
-
-void save_session_token(const string& file_name, string token_id) {
+SessionData save_session_token_master_key(const string& file_name, const string& token_id, vector<unsigned char>& salt_master) {
     string password;
 
     while (true) {
@@ -127,30 +82,141 @@ void save_session_token(const string& file_name, string token_id) {
         throw runtime_error("Memory overflow");
     }
 
-    sodium_memzero(&password[0], password.size());
-
     vector<unsigned char> encrypted_session(token_id.size() + crypto_secretbox_MACBYTES);
 
     crypto_secretbox_easy(encrypted_session.data(), reinterpret_cast<const unsigned char*>(token_id.data()), token_id.size(), nonce, password_hash.data());
 
+    sodium_memzero(&password[0], password.size());
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    string master_password = bip_seed_generate();
+
+    cout << "Your master password is: " << master_password << " : save this!" << endl;
+
+    vector <unsigned char> private_key(crypto_box_SECRETKEYBYTES);
+
+    if (crypto_pwhash(private_key.data(), private_key.size(), master_password.data(), master_password.size(), salt_master.data(), crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE, crypto_pwhash_ALG_DEFAULT) != 0) {
+        throw runtime_error("Memory overflow");
+    }
+
+    vector <unsigned char> public_key(crypto_box_PUBLICKEYBYTES);
+
+    if (crypto_scalarmult_base(public_key.data(), private_key.data()) != 0) {
+        throw runtime_error("Failed to generate public master key!");
+    }
+
+    vector<unsigned char> encrypted_private_key(private_key.size() + crypto_secretbox_MACBYTES);
+    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce, password_hash.data());
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     ofstream file(file_name, ios::out | ios::binary);
+
+    sodium_memzero(&master_password[0], master_password.size());
 
     if (file.is_open()) {
         file.write(reinterpret_cast<const char*>(nonce), crypto_secretbox_NONCEBYTES);
         file.write(reinterpret_cast<const char*>(salt), crypto_pwhash_SALTBYTES);
         file.write(reinterpret_cast<const char*>(encrypted_session.data()), encrypted_session.size());
+        file.write(reinterpret_cast<const char*>(encrypted_private_key.data()), encrypted_private_key.size());
+        file.write(reinterpret_cast<const char*>(public_key.data()), crypto_box_PUBLICKEYBYTES);
     } else {
         throw runtime_error("Failed to save session token!");
     }
 
+    //sodium_memzero(password_hash.data(), password_hash.size());
+
     file.close();
+
+    return {token_id, private_key, public_key, password_hash};
 }
 
-string load_session_token(const string& file_name) {
+SessionData save_session_token_load_master_key(const string& file_name, const string& token_id, vector<unsigned char>& salt_master, const vector<unsigned char>& public_key) {
+    string password;
+
+    while (true) {
+        cout << "Enter the session password: " << endl;
+        cin >> password;
+
+        if (password.size() < 10) {
+            cout << "Password is too low, need more than 10 symbols." << endl;
+        } else {
+            break;
+        }
+    }
+
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
+
+    unsigned char salt[crypto_pwhash_SALTBYTES];
+    randombytes_buf(salt, crypto_pwhash_SALTBYTES);
+
+    vector <unsigned char> password_hash(crypto_secretbox_KEYBYTES);
+
+    if (crypto_pwhash(password_hash.data(), password_hash.size(), password.data(), password.size(), salt, crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE, crypto_pwhash_ALG_DEFAULT) != 0) {
+        throw runtime_error("Memory overflow");
+    }
+
+    vector<unsigned char> encrypted_session(token_id.size() + crypto_secretbox_MACBYTES);
+
+    crypto_secretbox_easy(encrypted_session.data(), reinterpret_cast<const unsigned char*>(token_id.data()), token_id.size(), nonce, password_hash.data());
+
+    sodium_memzero(&password[0], password.size());
+
+    string master_password;
+
+    cout << "Enter your master password: " << endl;
+
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    getline(cin, master_password);
+
+    vector <unsigned char> private_key(crypto_box_SECRETKEYBYTES);
+
+    if (crypto_pwhash(private_key.data(), private_key.size(), master_password.data(), master_password.size(), salt_master.data(), crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE, crypto_pwhash_ALG_DEFAULT) != 0) {
+        throw runtime_error("Memory overflow");
+    }
+
+    vector <unsigned char> public_key_check(crypto_box_PUBLICKEYBYTES);
+
+    if (crypto_scalarmult_base(public_key_check.data(), private_key.data()) != 0) {
+        throw runtime_error("Failed to generate public master key!");
+    }
+
+    if (sodium_memcmp(public_key.data(), public_key_check.data(), crypto_box_PUBLICKEYBYTES) != 0) {
+        throw runtime_error("Public key is corrupted! Failed to login in account!");
+    }
+
+    vector<unsigned char> encrypted_private_key(private_key.size() + crypto_secretbox_MACBYTES);
+    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce, password_hash.data());
+
+    ofstream file(file_name, ios::out | ios::binary);
+
+    sodium_memzero(&master_password[0], master_password.size());
+
+    if (file.is_open()) {
+        file.write(reinterpret_cast<const char*>(nonce), crypto_secretbox_NONCEBYTES);
+        file.write(reinterpret_cast<const char*>(salt), crypto_pwhash_SALTBYTES);
+        file.write(reinterpret_cast<const char*>(encrypted_session.data()), encrypted_session.size());
+        file.write(reinterpret_cast<const char*>(encrypted_private_key.data()), encrypted_private_key.size());
+        file.write(reinterpret_cast<const char*>(public_key_check.data()), crypto_box_PUBLICKEYBYTES);
+    } else {
+        throw runtime_error("Failed to save session token!");
+    }
+
+    //sodium_memzero(password_hash.data(), password_hash.size());
+
+    file.close();
+
+    return {token_id, private_key, public_key, password_hash};
+}
+
+SessionData load_session_token_master_key(const string& file_name) {
     ifstream file(file_name, ios::binary | ios::ate);
 
     if (!file.is_open()) {
-        return "";
+        return {};
     }
 
     streamsize file_size = file.tellg();
@@ -168,11 +234,15 @@ string load_session_token(const string& file_name) {
     unsigned char nonce[crypto_secretbox_NONCEBYTES];
     unsigned char salt[crypto_pwhash_SALTBYTES];
 
-    vector <unsigned char> crypted_session(file_size - crypto_secretbox_NONCEBYTES - crypto_pwhash_SALTBYTES);
+    vector <unsigned char> crypted_session(SESSION_SIZE + crypto_secretbox_MACBYTES);
+    vector <unsigned char> crypted_private_key(crypto_box_SECRETKEYBYTES + crypto_secretbox_MACBYTES);
+    vector <unsigned char> public_key(crypto_box_PUBLICKEYBYTES);
 
     file.read(reinterpret_cast<char*>(nonce), crypto_secretbox_NONCEBYTES);
     file.read(reinterpret_cast<char*>(salt), crypto_pwhash_SALTBYTES);
     file.read(reinterpret_cast<char*>(crypted_session.data()), crypted_session.size());
+    file.read(reinterpret_cast<char*>(crypted_private_key.data()), crypted_private_key.size());
+    file.read(reinterpret_cast<char*>(public_key.data()), public_key.size());
 
     vector <unsigned char> password_hash(crypto_secretbox_KEYBYTES);
 
@@ -188,10 +258,44 @@ string load_session_token(const string& file_name) {
         throw runtime_error("Password is invalid!");
     }
 
-    return string(decrypted_session.begin(), decrypted_session.end());
+    vector <unsigned char> decrypted_private_key(crypted_private_key.size() - crypto_secretbox_MACBYTES);
+
+    if (crypto_secretbox_open_easy(decrypted_private_key.data(), crypted_private_key.data(), crypted_private_key.size(), nonce, password_hash.data()) != 0) {
+        throw runtime_error("Password is invalid!");
+    }
+
+    string session_id = string(decrypted_session.begin(), decrypted_session.end());
+
+    //sodium_memzero(password_hash.data(), password_hash.size());
+
+    SessionData session_data = {session_id, decrypted_private_key, public_key, password_hash};
+
+    return session_data;
 }
 
-void login(Cryption& cryption, Session& session, tcp::socket& socket) {
+vector<unsigned char> convert_salt(string salt_hex) {
+    vector<unsigned char> salt_master(crypto_pwhash_SALTBYTES);
+    size_t bin_len;
+
+    if (sodium_hex2bin(salt_master.data(), salt_master.size(), salt_hex.data(), salt_hex.size(), nullptr, &bin_len, nullptr) != 0) {
+        throw runtime_error("Failed to convert master_salt");
+    }
+
+    return salt_master;
+}
+
+vector<unsigned char> convert_public_key(string public_key_hex) {
+    vector<unsigned char> public_key(crypto_box_PUBLICKEYBYTES);
+    size_t bin_len;
+
+    if (sodium_hex2bin(public_key.data(), public_key.size(), public_key_hex.data(), public_key_hex.size(), nullptr, &bin_len, nullptr) != 0) {
+        throw runtime_error("Failed to convert master_salt");
+    }
+
+    return public_key;
+}
+
+SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
     vector<unsigned char> get_log = recv_package(cryption, session, socket);
 
     json log = nlohmann::json::parse(get_log.begin(), get_log.end());
@@ -199,8 +303,8 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
     if (log["status"] == "get_id" && log["code"] == 100) {
         string login_register;
 
-        string token = load_session_token("session_token.data");
-        if (token == "") {
+        SessionData token = load_session_token_master_key("session_token.data");
+        if (token.session_id.empty()) {
             string login_register;
 
             cout << "Do you want register new account? (y/n): ";
@@ -220,12 +324,18 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
                 vector<unsigned char> id_response = recv_package(cryption, session, socket);
                 json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
 
+                SessionData session_data;
+
                 if (id_json["status"] == "new_id" && id_json["code"] == 200) {
-                    string new_token_id = id_json["data"]["id"].get<string>();
-                    save_session_token("session_token.data", new_token_id);
-                    cout << "You will added to server! Welcome!" << endl;
+                    string new_token_id = id_json["data"]["id"];
+                    string salt_hex = id_json["data"]["salt"];
+
+                    vector<unsigned char> salt_master = convert_salt(salt_hex);
+
+                    session_data = save_session_token_master_key("session_token.data", new_token_id, salt_master);
+                    cout << "Your token has been created!" << endl;
                 } else if (id_json["status"] == "new_id" && id_json["code"] == 300)  {
-                    throw runtime_error("Failed adding you to server!");
+                    throw runtime_error("Failed creating your token on server!");
                 } else {
                     throw runtime_error("Invalid signature new_id");
                 }
@@ -234,32 +344,69 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
                 string password = "root";
 
                 cout << "Enter name: " << endl;
-                //cin >> name;
+                cin >> name;
 
                 cout << "Enter password: " << endl;
-                //cin >> password;
+                cin >> password;
+
+                string hex_public_key(crypto_box_PUBLICKEYBYTES * 2, ' ');
+                sodium_bin2hex(&hex_public_key[0], hex_public_key.size() + 1, session_data.public_key.data(), crypto_box_PUBLICKEYBYTES);
 
                 json user_info = {
                     {"status", "user_info"},
                     {"code", 200},
-                    {"data", {{"name", name}, {"password", password}, }}
+                    {"data", {{"name", name}, {"password", password}, {"public_key", hex_public_key}}}
                 };
 
                 vector<unsigned char> user_info_data = pack_data(user_info);
                 send_package(user_info_data, cryption, session, socket);
 
-                vector<unsigned char> user_data_response = recv_package(cryption, session, socket);
-                json user_data_response_json = nlohmann::json::parse(user_data_response);
+                bool accept = false;
 
-                if (user_data_response_json["status"] == "created_account" && user_data_response_json["code"] == 200) {
-                    cout << name << ", Your account was successful added to server!" << endl;
+                while (!accept) {
+                    vector<unsigned char> name_resp = recv_package(cryption, session, socket);
+                    json name_resp_json = nlohmann::json::parse(name_resp);
+
+                    if (name_resp_json["status"] == "retype_name") {
+                        string retype_name;
+                        cout << name_resp_json["data"] << endl;
+
+                        cout << "Enter name: " << endl;
+                        cin >> retype_name;
+
+                        name = retype_name;
+
+                        json name_info_json = {
+                            {"status", "name_info"},
+                            {"code", 200},
+                            {"data", {{"name", retype_name}}}
+                        };
+
+                        vector<unsigned char> name_info = pack_data(name_info_json);
+                        send_package(name_info, cryption, session, socket);
+                    }
+                    else if (name_resp_json["status"] == "timeout_exceeded") {
+                        cout << "Attempts has been exceeded" << endl;
+
+                        throw exception("Please, try to register again");
+                    }
+                    else if (name_resp_json["status"] == "created_account" && name_resp_json["code"] == 200) {
+                        cout << name << ", Your account was successful added to server!" << endl;
+
+                        accept = true;
+                        break;
+                    } else {
+                        throw runtime_error("Error register account!");
+                    }
                 }
+
+                return session_data;
             } else if (login_register == "n") {
                 string name = "angryduck";
                 string password = "root";
 
                 cout << "Enter name: " << endl;
-                //cin >> name;
+                cin >> name;
 
                 cout << "Enter password: " << endl;
                 cin >> password;
@@ -306,9 +453,17 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
                 json id_json = nlohmann::json::parse(id_response.begin(), id_response.end());
 
                 if (id_json["status"] == "new_id" && id_json["code"] == 200) {
-                    string new_token_id = id_json["data"]["id"].get<string>();
-                    save_session_token("session_token.data", new_token_id);
+                    string new_token_id = id_json["data"]["id"];
+                    string hex_salt = id_json["data"]["salt"];
+                    string hex_public_key = id_json["data"]["public_key"];
+
+                    vector<unsigned char> salt_master = convert_salt(hex_salt);
+                    vector<unsigned char> public_key = convert_public_key(hex_public_key);
+
+                    SessionData session_data = save_session_token_load_master_key("session_token.data", new_token_id, salt_master, public_key);
                     cout << "You will added to server! Welcome!" << endl;
+
+                    return session_data;
                 }
 
             } else {
@@ -316,9 +471,9 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
             }
         } else {
             json current_token = {
-                {"status", "user_info"},
+                {"status", "current_id"},
                 {"code", 200},
-                {"data", {{"id", token}}}
+                {"data", {{"id", token.session_id}}}
             };
 
             vector<unsigned char> current_token_data = pack_data(current_token);
@@ -330,6 +485,8 @@ void login(Cryption& cryption, Session& session, tcp::socket& socket) {
 
             if (id_response_json["status"] == "status_id" && id_response_json["code"] == 200) {
                 cout << "You will added to server! Welcome!" << endl;
+
+                return token;
             } else if (id_response_json["status"] == "status_id" && id_response_json["code"] == 300) {
                 cout << "Your token hasn`t been finded!" << endl;
             }
@@ -369,7 +526,10 @@ int main() {
 
         cout << "Successful send" << endl;
 
-        login(cryption, session, socket);
+        SessionData session_data = login(cryption, session, socket);
+
+        ClientActivity activity(session, cryption, socket, session_data.password_hash, session_data.public_key, session_data.private_key);
+
     } catch (const system_error& e) {
         cout << "Client error: " << e.what() << endl;
     }
