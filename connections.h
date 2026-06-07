@@ -40,7 +40,8 @@ public:
     void clean_disconnected(Redis& redis);
     void update_activity(const string& session_id);
     string get_chat_id(const string& session_id, Redis &redis);
-    int new_chat(const string& session_id, string name, Redis &redis);
+    void new_chat(const string& session_id, const string& name, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket);
+    void sync_client(const string& session_id, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket);
 };
 
 

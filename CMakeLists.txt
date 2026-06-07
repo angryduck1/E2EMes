@@ -6,6 +6,7 @@ find_package(Boost REQUIRED COMPONENTS asio system)
 find_package(nlohmann_json 3.12.0 REQUIRED)
 find_package(redis++ REQUIRED)
 find_package(hiredis REQUIRED)
+find_package(leveldb CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -41,5 +42,5 @@ target_link_libraries(client PRIVATE
         Boost::system
         unofficial-sodium::sodium
         nlohmann_json::nlohmann_json
-        leveldb
+        leveldb::leveldb
 )

@@ -101,7 +101,8 @@ void add_user_info_to_bd(const string& password, const string& name, const strin
     redis.sadd("status:" + chat_id, session_id);
 
     redis.sadd("new_chat_queue:" + chat_id, "EMPTY_CHAT_ID");
-    redis.sadd("init_queue_success:" + chat_id, "EMPTY_CHAT_ID");
+
+    redis.sadd("chat_list:" + chat_id, "EMPTY_CHAT_ID");
 
     redis.set("names:" + name, chat_id);
 }

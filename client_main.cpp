@@ -273,28 +273,6 @@ SessionData load_session_token_master_key(const string& file_name) {
     return session_data;
 }
 
-vector<unsigned char> convert_salt(string salt_hex) {
-    vector<unsigned char> salt_master(crypto_pwhash_SALTBYTES);
-    size_t bin_len;
-
-    if (sodium_hex2bin(salt_master.data(), salt_master.size(), salt_hex.data(), salt_hex.size(), nullptr, &bin_len, nullptr) != 0) {
-        throw runtime_error("Failed to convert master_salt");
-    }
-
-    return salt_master;
-}
-
-vector<unsigned char> convert_public_key(string public_key_hex) {
-    vector<unsigned char> public_key(crypto_box_PUBLICKEYBYTES);
-    size_t bin_len;
-
-    if (sodium_hex2bin(public_key.data(), public_key.size(), public_key_hex.data(), public_key_hex.size(), nullptr, &bin_len, nullptr) != 0) {
-        throw runtime_error("Failed to convert master_salt");
-    }
-
-    return public_key;
-}
-
 SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
     vector<unsigned char> get_log = recv_package(cryption, session, socket);
 
@@ -529,6 +507,7 @@ int main() {
         SessionData session_data = login(cryption, session, socket);
 
         ClientActivity activity(session, cryption, socket, session_data.password_hash, session_data.public_key, session_data.private_key);
+        activity.main_thread();
 
     } catch (const system_error& e) {
         cout << "Client error: " << e.what() << endl;
