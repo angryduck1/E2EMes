@@ -3,7 +3,6 @@
 #include <mutex>
 #include <chrono>
 #include <nlohmann/json.hpp>
-#include "client_connection.h"
 #include <iostream>
 #include <thread>
 #include <atomic>

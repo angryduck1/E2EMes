@@ -1,0 +1,28 @@
+[package]
+name = "bin_bin_messenger"
+version = "0.5.0"
+standard = "20"
+
+[target.client.build]
+include_dirs = ["include", "C:\\Users\\sivok\\.vcpkg-clion\\vcpkg\\installed\\x64-windows\\include"]
+lib_dirs = ["lib", "C:\\Users\\sivok\\.vcpkg-clion\\vcpkg\\installed\\x64-windows\\lib"]
+libs = [
+    "redis++", "libsodium", "ws2_32"
+]
+src_dirs = ["src/client"]
+
+[target.client.compiler]
+kind = "msvc"
+path = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe"
+
+[target.server.build]
+include_dirs = ["include", "C:\\Users\\sivok\\.vcpkg-clion\\vcpkg\\installed\\x64-windows\\include"]
+lib_dirs = ["lib", "C:\\Users\\sivok\\.vcpkg-clion\\vcpkg\\installed\\x64-windows\\lib"]
+libs = [
+    "redis++", "libsodium", "ws2_32"
+]
+src_dirs = ["src/server"]
+
+[target.server.compiler]
+kind = "msvc"
+path = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe"
