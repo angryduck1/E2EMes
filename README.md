@@ -13,7 +13,7 @@ E2EMes is a messenger with continious end-to-end encryption.
 - Fast working and easy for use
 - Comfortbale session system of authorization.
 
-
 ## Install
 
-You need to install *libsodium* *boost-asio*. Build *cmake* file and enjoy of process.
+You need to install *libsodium* *boost-asio* *redis*. Build *cmake* file.
+After install run *server*, *redis-server* and enjoy of process!
