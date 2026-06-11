@@ -1,5 +1,8 @@
 # EE2E Messenger writed on C++.
 
+<BinBin>
+Copyright (C) 2026 <BinBin>
+
 ![Project Status](https://img.shields.io/badge/in_development-now)
 
 ![C++](https://img.shields.io/badge/C++-20-blue?logo=cplusplus&logoColor=white)
@@ -18,3 +21,8 @@ E2EMes is a messenger with continious end-to-end encryption.
 
 You need to install *libsodium* *boost-asio* *redis*. Build *cmake* file.
 After install run *server*, *redis-server* and enjoy of process!
+
+### License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+See the [LICENSE](./LICENSE) file for the full text.
