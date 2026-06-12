@@ -7,6 +7,7 @@ find_package(nlohmann_json 3.12.0 REQUIRED)
 find_package(redis++ REQUIRED)
 find_package(hiredis REQUIRED)
 find_package(leveldb CONFIG REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -24,6 +25,7 @@ target_link_libraries(server PRIVATE
         nlohmann_json::nlohmann_json
         redis++::redis++
         hiredis::hiredis
+        SQLite::SQLite3
 )
 
 add_executable(client
@@ -42,5 +44,5 @@ target_link_libraries(client PRIVATE
         Boost::system
         unofficial-sodium::sodium
         nlohmann_json::nlohmann_json
-        leveldb::leveldb
+        SQLite::SQLite3
 )

@@ -318,8 +318,8 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
                     throw runtime_error("Invalid signature new_id");
                 }
 
-                string name = "angryduck";
-                string password = "root";
+                string name;
+                string password;
 
                 cout << "Enter name: " << endl;
                 cin >> name;
@@ -380,8 +380,8 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
 
                 return session_data;
             } else if (login_register == "n") {
-                string name = "angryduck";
-                string password = "root";
+                string name;
+                string password;
 
                 cout << "Enter name: " << endl;
                 cin >> name;

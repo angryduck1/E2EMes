@@ -99,6 +99,13 @@ vector<unsigned char> convert_public_key(const string& public_key_hex) {
     return public_key;
 }
 
+const string hex_to_string_convert_message(vector<unsigned char>& message) {
+    string hex_salt(message.size() * 2, ' ');
+    sodium_bin2hex(&hex_salt[0], hex_salt.size() + 1, message.data(), message.size());
+
+    return hex_salt;
+}
+
 void generate_secret_initial(const string& file_name, vector<unsigned char>& password_hash, vector<unsigned char>& private_key, vector<unsigned char>& public_key_endpoint) {
     unsigned char nonce[crypto_secretbox_NONCEBYTES];
     randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
@@ -132,6 +139,29 @@ void generate_secret_initial(const string& file_name, vector<unsigned char>& pas
     sodium_memzero(scalarmult_result.data(), scalarmult_result.size());
 
     file.close();
+}
+
+vector<unsigned char> load_secret_initial(const string& file_name, vector<unsigned char>& password_hash) {
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+
+    vector<unsigned char> crypted_private_key(crypto_secretbox_KEYBYTES + crypto_secretbox_MACBYTES);
+
+    ifstream file(file_name, ios::in | ios::binary);
+
+    if (file.is_open()) {
+        file.read(reinterpret_cast<char*>(nonce), crypto_secretbox_NONCEBYTES);
+        file.read(reinterpret_cast<char*>(crypted_private_key.data()), crypted_private_key.size());
+    } else {
+        throw runtime_error("Failed to load general secret!");
+    }
+
+    vector<unsigned char> decrypted_private_key(crypto_secretbox_KEYBYTES);
+
+    if (crypto_secretbox_open_easy(decrypted_private_key.data(), crypted_private_key.data(), crypted_private_key.size(), nonce, password_hash.data()) != 0) {
+        throw runtime_error("Failed decrypt general key!");
+    }
+
+    return decrypted_private_key;
 }
 
 bool check_exist_gen_key(const string& file_name) {

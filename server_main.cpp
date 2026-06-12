@@ -5,12 +5,13 @@
 #include <thread>
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include "connections.h"
 #include <sw/redis++/redis++.h>
 #include <chrono>
+#include "connections.h"
 
 using namespace std;
 using namespace boost::asio;
+using namespace sqlite_orm;
 using namespace sw::redis;
 
 using ip::tcp;
@@ -37,14 +38,6 @@ int load_binary_key(const string& file_name, unsigned char* key, size_t key_len)
     file.read(reinterpret_cast<char*>(key), key_len);
 
     return 0;
-}
-
-vector<unsigned char> pack_data(json data_json) {
-    string data_str = data_json.dump();
-
-    vector<unsigned char> data(data_str.begin(), data_str.end());
-
-    return data;
 }
 
 string generate_session_token() {
@@ -129,7 +122,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         {"data", ""}
     };
 
-    vector<unsigned char> log_id_data = pack_data(log_id);
+    vector<unsigned char> log_id_data = connections.pack_data(log_id);
 
     connections.send_package(log_id_data, cryption, session, *socket);
 
@@ -152,7 +145,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
             {"data", { {"id", new_session_id}, {"salt", hex_salt} }}
         };
 
-        vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
+        vector<unsigned char> new_token_id_json_send = connections.pack_data(new_token_id_json);
         connections.send_package(new_token_id_json_send, cryption, session, *socket);
 
         vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
@@ -173,7 +166,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                         {"data", "This name already exists. " + to_string(attempts) + " left."}
                     };
 
-                    vector<unsigned char> created_account_send = pack_data(created_account);
+                    vector<unsigned char> created_account_send = connections.pack_data(created_account);
                     connections.send_package(created_account_send, cryption, session, *socket);
 
                     vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
@@ -196,7 +189,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                     {"data", "This name already exists"}
                 };
 
-                vector<unsigned char> timeout_message_send = pack_data(timeout_message);
+                vector<unsigned char> timeout_message_send = connections.pack_data(timeout_message);
 
                 connections.send_package(timeout_message_send, cryption, session, *socket);
             }
@@ -213,7 +206,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                 {"data", ""}
             };
 
-            vector<unsigned char> created_account_send = pack_data(created_account);
+            vector<unsigned char> created_account_send = connections.pack_data(created_account);
             connections.send_package(created_account_send, cryption, session, *socket);
 
             connections.client_thread(new_session_id, cryption, session, socket, redis);
@@ -224,7 +217,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                 {"data", ""}
             };
 
-            vector<unsigned char> created_account_send = pack_data(created_account);
+            vector<unsigned char> created_account_send = connections.pack_data(created_account);
             connections.send_package(created_account_send, cryption, session, *socket);
 
             throw exception("Invalid signature user_info");
@@ -241,7 +234,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         if (check_valid_session(token_id, redis) != 0) {
             resp_token_id_json["code"] = 300;
 
-            vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
+            vector<unsigned char> resp_token_id_json_send = connections.pack_data(resp_token_id_json);
             connections.send_package(resp_token_id_json_send, cryption, session, *socket);
 
             return;
@@ -249,7 +242,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
 
         connections.add_session(token_id, socket, session);
 
-        vector<unsigned char> resp_token_id_json_send = pack_data(resp_token_id_json);
+        vector<unsigned char> resp_token_id_json_send = connections.pack_data(resp_token_id_json);
         connections.send_package(resp_token_id_json_send, cryption, session, *socket);
 
         connections.client_thread(token_id, cryption, session, socket, redis);
@@ -271,7 +264,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                         {"data", "You have " + to_string(attempts) + " attempts"}
                     };
 
-                    vector<unsigned char> reply_message_send = pack_data(reply_message_json);
+                    vector<unsigned char> reply_message_send = connections.pack_data(reply_message_json);
                     connections.send_package(reply_message_send, cryption, session, *socket);
 
                     attempts -= 1;
@@ -292,7 +285,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                     {"data", ""}
                 };
 
-                vector<unsigned char> login_message_send = pack_data(login_message_json);
+                vector<unsigned char> login_message_send = connections.pack_data(login_message_json);
                 connections.send_package(login_message_send, cryption, session, *socket);
             } else {
                 json login_message_json = {
@@ -301,7 +294,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                     {"data", ""}
                 };
 
-                vector<unsigned char> login_message_send = pack_data(login_message_json);
+                vector<unsigned char> login_message_send = connections.pack_data(login_message_json);
                 connections.send_package(login_message_send, cryption, session, *socket);
 
                 string new_session_id = generate_session_token();
@@ -320,7 +313,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                     {"data", { {"id", new_session_id}, {"salt", hex_salt}, {"public_key", public_key} }}
                 };
 
-                vector<unsigned char> new_token_id_json_send = pack_data(new_token_id_json);
+                vector<unsigned char> new_token_id_json_send = connections.pack_data(new_token_id_json);
                 connections.send_package(new_token_id_json_send, cryption, session, *socket);
 
                 connections.client_thread(new_session_id, cryption, session, socket, redis);
@@ -332,7 +325,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                 {"data", ""}
             };
 
-            vector<unsigned char> reply_message_send = pack_data(reply_message_json);
+            vector<unsigned char> reply_message_send = connections.pack_data(reply_message_json);
             connections.send_package(reply_message_send, cryption, session, *socket);
         }
     }
@@ -368,6 +361,8 @@ int main() {
     }
 
     Redis redis("tcp://127.0.0.1:6400");
+
+    connections.init_bd("users.bd");
 
     io_context io_ctx;
 

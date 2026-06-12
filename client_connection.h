@@ -25,7 +25,11 @@ vector<unsigned char> convert_salt(const string& salt_hex);
 
 vector<unsigned char> convert_public_key(const string& public_key_hex);
 
+const string hex_to_string_convert_message(vector<unsigned char>& message);
+
 void generate_secret_initial(const string& file_name, vector<unsigned char>& password_hash, vector<unsigned char>& private_key, vector<unsigned char>& public_key_endpoint);
+
+vector<unsigned char> load_secret_initial(const string& file_name, vector<unsigned char>& password_hash);
 
 bool check_exist_gen_key(const string& name);
 

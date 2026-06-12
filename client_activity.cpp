@@ -13,6 +13,18 @@ ClientActivity::ClientActivity(Session &session, Cryption &cryption, tcp::socket
     input_text = "";
 }
 
+ClientActivity::~ClientActivity() {
+    for (auto &i : general_keys) {
+        sodium_memzero(i.second.data(), i.second.size());
+    }
+    general_keys.clear();
+
+    if (!password_hash.empty()) {
+        sodium_memzero(password_hash.data(), password_hash.size());
+    }
+}
+
+
 void ClientActivity::update_activity() {
     lock_guard<mutex> lock(mtx);
 
@@ -53,6 +65,26 @@ void ClientActivity::input_thread() {
     }
 }
 
+User ClientActivity::get_last_message_from_bd(const string& name_init, const string& name_recp) {
+    auto& storage = get_storage();
+
+    auto messages = storage.get_all<User>(where(and_(c(&User::sender_name) == name_init, c(&User::recp_name) == name_recp)), order_by(&User::message_id).desc(), limit(1));
+
+    if (!messages.empty()) {
+        return messages.front();
+    }
+
+    return {0};
+}
+
+void ClientActivity::add_new_message_to_bd(const string& name_init, const string& name_recp, const string& message, const string& nonce, int& message_id, time_t& time) {
+    auto& storage = get_storage();
+
+    User message_info = {0, message_id, time, name_init, name_recp, message, nonce};
+
+    storage.insert(message_info);
+}
+
 void ClientActivity::init_new_chat(const string& name) {
     json new_chat_recv_json = {
         {"status", "new_chat"},
@@ -78,9 +110,74 @@ void ClientActivity::init_new_chat(const string& name) {
     }
 }
 
+void ClientActivity::send_new_message(const string& name) {
+    json new_message_json = {
+        {"status", "new_message"},
+        {"code", 800},
+        {"data", {{"name", name}}}
+    };
+
+    vector<unsigned char> new_message_data = pack_data(new_message_json);
+
+    send_package(new_message_data, cryption, session, socket);
+
+    vector<unsigned char> new_message_info = recv_package(cryption, session, socket);
+
+    json new_message_info_json = nlohmann::json::parse(new_message_info);
+
+    if (new_message_info_json["status"] != "new_message_failed") {
+        string message;
+        cout << "Type message: " << endl;
+        std::getline(cin, message);
+
+        if (!check_exist_gen_key("gen_key_" + name + ".data")) {
+            cout << "Failed send new message to " << name << " because sync has not occurred yet";
+        } else {
+            if (!general_keys.contains(name)) {
+                general_keys[name] = load_secret_initial("gen_key_" + name + ".data", password_hash);
+            }
+
+            vector<unsigned char> nonce(crypto_secretbox_NONCEBYTES);
+            randombytes_buf(nonce.data(), crypto_secretbox_NONCEBYTES);
+
+            vector<unsigned char> crypted_message(message.size() + crypto_secretbox_MACBYTES);
+
+            crypto_secretbox_easy(crypted_message.data(), reinterpret_cast<const unsigned char*>(message.data()), message.size(), nonce.data(), general_keys[name].data());
+
+            string string_crypted_message = hex_to_string_convert_message(crypted_message);
+            string string_nonce = hex_to_string_convert_message(nonce);
+
+            json new_message_json = {
+                {"status", "new_message_info"},
+                {"code", 800},
+                {"data", {{"message", string_crypted_message}, {"nonce", string_nonce}}}
+            };
+
+            vector<unsigned char> new_message_data = pack_data(new_message_json);
+
+            send_package(new_message_data, cryption, session, socket);
+
+            vector<unsigned char> new_message_help_data = recv_package(cryption, session, socket);
+
+            json new_message_help_json = nlohmann::json::parse(new_message_help_data.begin(), new_message_help_data.end());
+
+            time_t time = new_message_help_json["data"]["time"];
+            int message_id = new_message_help_json["data"]["message_id"];
+            string name_init = new_message_help_json["data"]["name_init"];
+
+            add_new_message_to_bd(name_init, name, string_crypted_message, string_nonce, message_id, time);
+        }
+    }
+    else {
+        cout << name << "You don`t have general chat with " << name << endl;
+    }
+}
+
 void ClientActivity::main_thread() {
     thread worker(&ClientActivity::input_thread, this);
     worker.detach();
+
+    init_bd("chats.bd");
 
     while (true) {
         try {
@@ -99,6 +196,19 @@ void ClientActivity::main_thread() {
                     init_new_chat(name);
 
                     cout << "Request on creating new chat was successful send!" << endl;
+                }
+
+                if (input_text.find("/newMes") != string::npos) {
+                    string target = "/newMes";
+                    size_t pos = input_text.find(target);
+
+                    string name = input_text.substr(pos + target.length() + 1);
+
+                    update_activity();
+
+                    send_new_message(name);
+
+                    cout << "Request on sending new message was successful send!" << endl;
                 }
                 running = true;
                 newInput = false;
@@ -120,6 +230,7 @@ void ClientActivity::main_thread() {
             }
 
             if (time_out_sync_activity()) {
+
                 running = false;
 
                 json sync_json = {
@@ -167,9 +278,9 @@ void ClientActivity::main_thread() {
 
                                 generate_secret_initial("gen_key_" + name + ".data", password_hash, private_key, public_key);
                             }
+                        } else {
+                            status_info["status"] = "n";
                         }
-
-                        status_info["status"] = "n";
 
                         sync_status["data"].push_back(status_info);
                     }
@@ -181,6 +292,14 @@ void ClientActivity::main_thread() {
 
                     cout << "Chat list sync..." << endl;
 
+                    json sync_chats_json = {
+                        {"status", "sync_chats"},
+                        {"code", 700},
+                        {"data", ""}
+                    };
+
+                    sync_chats_json["data"] = json::array();
+
                     vector<unsigned char> chat_list_data = recv_package(cryption, session, socket);
                     json chat_list_json = nlohmann::json::parse(chat_list_data.begin(), chat_list_data.end());
 
@@ -189,12 +308,53 @@ void ClientActivity::main_thread() {
                             string name = user["name"];
                             string public_key_string = user["public_key"];
 
+                            string name_init = user["name_init"];
+
+                            int last_message_id = get_last_message_from_bd(name_init, name).message_id;
+                            int last_message_sync_id = user["message_id"];
+
                             if (!check_exist_gen_key("gen_key_" + name + ".data")) {
                                 vector<unsigned char> public_key = convert_public_key(public_key_string);
 
                                 generate_secret_initial("gen_key_" + name + ".data", password_hash, private_key, public_key);
                             }
+
+                            if (last_message_id < last_message_sync_id) {
+                                json user_info;
+
+                                user_info["name"] = name;
+                                user_info["last_message_id"] = last_message_id;
+                                user_info["message_id"] = last_message_sync_id;
+
+                                sync_chats_json["data"].push_back(user_info);
+                            }
                         }
+                    }
+
+                    vector<unsigned char> chat_sync_data = pack_data(sync_chats_json);
+                    send_package(chat_sync_data, cryption, session, socket);
+
+                    bool is_end = false;
+
+                    while (!is_end) {
+                        vector<unsigned char> sync_chat_data = recv_package(cryption, session, socket);
+                        json sync_chat_json = nlohmann::json::parse(sync_chat_data.begin(), sync_chat_data.end());
+
+                        if (sync_chat_json["status"] == "end_sync_chats") {
+                            is_end = true;
+                            break;
+                        }
+
+                        string message = sync_chat_json["data"]["message"];
+                        string nonce = sync_chat_json["data"]["nonce"];
+                        string name_init = sync_chat_json["data"]["name_init"];
+                        string name_recp = sync_chat_json["data"]["name_recp"];
+                        int message_id = sync_chat_json["data"].value("message_id", 0);
+                        time_t time = sync_chat_json["data"].value("time", 0);
+
+                        add_new_message_to_bd(name_init, name_recp, message, nonce, message_id, time);
+
+                        cout << "Successful sync message_id " << message_id << " : " << name_init << " with " << name_recp << endl;
                     }
 
                     update_sync_activity();
@@ -210,5 +370,4 @@ void ClientActivity::main_thread() {
         }
     }
 }
-
 
