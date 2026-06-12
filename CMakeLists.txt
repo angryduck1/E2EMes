@@ -12,11 +12,11 @@ find_package(SQLite3 REQUIRED)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(server
-        server_main.cpp
+        server/server_main.cpp
         cryption.cpp
         cryption.h
-        connections.cpp
-        connections.h)
+        server/connections.cpp
+        server/connections.h)
 
 target_link_libraries(server PRIVATE
         Boost::asio
@@ -29,14 +29,14 @@ target_link_libraries(server PRIVATE
 )
 
 add_executable(client
-        client_main.cpp
+        client/client_main.cpp
         cryption.cpp
         cryption.h
-        client_activity.cpp
-        client_activity.h
-        client_connection.cpp
-        client_connection.h
-        bip_39.h
+        client/client_activity.cpp
+        client/client_activity.h
+        client/client_connection.cpp
+        client/client_connection.h
+        client/bip_39.h
 )
 
 target_link_libraries(client PRIVATE

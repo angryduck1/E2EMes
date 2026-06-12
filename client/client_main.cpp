@@ -1,7 +1,7 @@
 #include <iostream>
 #include <sodium.h>
 #include <boost/asio.hpp>
-#include "cryption.h"
+#include "../cryption.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string>

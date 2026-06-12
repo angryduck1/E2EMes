@@ -3,7 +3,6 @@
 //
 
 #include "client_activity.h"
-#include <leveldb/db.h>
 
 ClientActivity::ClientActivity(Session &session, Cryption &cryption, tcp::socket &socket, vector<unsigned char>& password_hash, vector<unsigned char>& public_key, vector<unsigned char>& private_key): session(session), cryption(cryption), socket(socket), password_hash(password_hash), public_key(public_key), private_key(private_key) {
     last_activity = std::chrono::steady_clock::now();
