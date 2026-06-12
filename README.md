@@ -8,7 +8,7 @@ Copyright (C) 2026 <BinBin>
 ![C++](https://img.shields.io/badge/C++-20-blue?logo=cplusplus&logoColor=white)
 ![Boost.Asio](https://img.shields.io/badge/Boost.Asio-1.74+-green)
 ![Redis](https://shields.io/badge/Redis-red)
-![SQLite](https://shields.io/badge-SQLite-blue)
+![SQLite](https://shields.io/badge/SQLite-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 ## Overview
