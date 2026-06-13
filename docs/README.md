@@ -16,6 +16,8 @@ E2EMes is a messenger with continious end-to-end encryption.
 - End-To-End encryption is a main act of security
 - Fast working and easy for use
 - Comfortbale session system of authorization.
+- 
+See the [ARCHITECTURE](./architecture.md) file.
 
 ## Install
 
@@ -25,4 +27,4 @@ After install run *server*, *redis-server* and enjoy of process!
 ### License
 
 This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-See the [LICENSE](./LICENSE) file for the full text.
+See the [LICENSE](../LICENSE) file for the full text.

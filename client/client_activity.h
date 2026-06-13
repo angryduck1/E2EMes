@@ -87,6 +87,7 @@ public:
     void input_thread();
     void init_new_chat(const string& name);
     void send_new_message(const string& name);
+    void sync_cloud();
     User get_last_message_from_bd(const string& name_init, const string& name_recp);
     void add_new_message_to_bd(const string& name_init, const string& name_recp, const string& message, const string& nonce, int& message_id, time_t& time);
     void init_bd(const string& file_name) {

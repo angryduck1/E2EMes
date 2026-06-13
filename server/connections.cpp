@@ -361,6 +361,7 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
                         new_message["data"]["nonce"] = message.nonce;
                         new_message["data"]["name_init"] = message.sender_name;
                         new_message["data"]["name_recp"] = message.recp_name;
+                        new_message["data"]["my_name"] = name_init;
                         new_message["data"]["message_id"] = message.message_id;
                         new_message["data"]["time"] = message.message_time;
 
