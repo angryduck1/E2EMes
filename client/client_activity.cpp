@@ -332,6 +332,27 @@ void ClientActivity::sync_cloud() {
             cout << message_text << endl;
         }
 
+        json sync_status_json = {
+            {"status", "sync_status"},
+            {"code", 700},
+            {"data", {}}
+        };
+
+        vector<unsigned char> sync_status_new_data = pack_data(sync_status_json);
+        send_package(sync_status_new_data, cryption, session, socket);
+
+        vector<unsigned char> sync_status_user_data = recv_package(cryption, session, socket);
+        json sync_status_user_json = nlohmann::json::parse(sync_status_user_data.begin(), sync_status_user_data.end());
+
+        if (sync_status_user_json["data"].is_array()) {
+            for (auto const &user: sync_status_user_json["data"]) {
+                string name = user["name"];
+                string status = user["status"];
+
+                cout << "Current status " << name << " : " << status << endl;
+            }
+        }
+
         update_sync_activity();
         running = true;
     } else {
