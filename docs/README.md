@@ -15,12 +15,12 @@ E2EMes is a messenger with continious end-to-end encryption.
 
 - End-To-End encryption is a main act of security
 - Fast working and easy for use
-- Comfortbale session system of authorization.
+- Comfortable session system of authorization.
 
 ## Install
 
-You need to install *libsodium* *boost-asio* *redis*. Build *cmake* file.
-After install run *server*, *redis-server* and enjoy of process!
+You need to install *libsodium* *boost-asio* *redis* *sqlite* *sqlite-orm*. Build *cmake* file.
+After install run *server*, **redis-server (port 6400)**, generate **open_key.bin** and **secret_key.bin** and enjoy of process!
 
 ### License
 
