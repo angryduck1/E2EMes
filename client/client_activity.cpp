@@ -181,7 +181,7 @@ void ClientActivity::send_new_message(const string &name) {
             add_new_message_to_bd(name_init, name, string_crypted_message, string_nonce, message_id, time);
         }
     } else {
-        cout << name << "You don`t have general chat with " << name << endl;
+        cout << "You don`t have general chat with " << name << endl;
     }
 }
 
@@ -371,12 +371,26 @@ void ClientActivity::main_thread() {
             if (newInput) {
                 lock_guard<mutex> lock(input_mutex);
 
-                running = false;
-                if (input_text.find("/newChat") != string::npos) {
-                    string target = "/newChat";
-                    size_t pos = input_text.find(target);
+                string command = "";
+                string argument = "";
 
-                    string name = input_text.substr(pos + target.length() + 1);
+                if (!input_text.empty()) {
+                    stringstream ss(input_text);
+
+                    ss >> command;
+
+                    getline(ss >> ws, argument);
+                }
+
+                running = false;
+                if (command == "/newChat" && !argument.empty()) {
+                    size_t pos = argument.find_first_not_of(' ');
+
+                    string name = argument;
+
+                    if (pos != std::string::npos) {
+                        name = argument.substr(pos);
+                    }
 
                     update_activity();
 
@@ -385,11 +399,14 @@ void ClientActivity::main_thread() {
                     cout << "Request on creating new chat was successful send!" << endl;
                 }
 
-                if (input_text.find("/newMes") != string::npos) {
-                    string target = "/newMes";
-                    size_t pos = input_text.find(target);
+                if (command == "/newMes" && !argument.empty()) {
+                    size_t pos = argument.find_first_not_of(' ');
 
-                    string name = input_text.substr(pos + target.length() + 1);
+                    string name = argument;
+
+                    if (pos != std::string::npos) {
+                        name = argument.substr(pos);
+                    }
 
                     update_activity();
 
