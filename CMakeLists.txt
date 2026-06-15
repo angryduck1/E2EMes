@@ -9,7 +9,14 @@ find_package(hiredis REQUIRED)
 find_package(leveldb CONFIG REQUIRED)
 find_package(SQLite3 REQUIRED)
 
+
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets Gui Core)
+
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
 
 add_executable(server
         server/server_main.cpp
@@ -28,7 +35,7 @@ target_link_libraries(server PRIVATE
         SQLite::SQLite3
 )
 
-add_executable(client
+add_executable(client WIN32
         client/client_main.cpp
         cryption.cpp
         cryption.h
@@ -37,9 +44,17 @@ add_executable(client
         client/client_connection.cpp
         client/client_connection.h
         client/bip_39.h
+
+        UI/MainWindow.cpp
+        UI/MainWindow.h
+        UI/MainWindow.ui
 )
 
-target_link_libraries(client PRIVATE
+target_link_libraries(client PRIVATE Qt6::Core Qt6::Widgets
+        Qt6::Widgets
+        Qt6::Gui
+        Qt6::Core
+
         Boost::asio
         Boost::system
         unofficial-sodium::sodium

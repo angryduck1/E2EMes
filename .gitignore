@@ -1,0 +1,7 @@
+.qtcreator
+build
+cmake-build-debug
+dll
+
+.idea
+.git
