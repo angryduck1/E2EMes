@@ -14,28 +14,72 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QListWidget" name="listWidget">
+   <widget class="QPushButton" name="loginButton">
     <property name="geometry">
      <rect>
-      <x>150</x>
-      <y>70</y>
-      <width>256</width>
-      <height>192</height>
+      <x>270</x>
+      <y>190</y>
+      <width>90</width>
+      <height>29</height>
      </rect>
+    </property>
+    <property name="text">
+     <string>Войти</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="createAccount">
+    <property name="geometry">
+     <rect>
+      <x>250</x>
+      <y>250</y>
+      <width>121</width>
+      <height>29</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Создать аккаунт</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="recoveryButton">
+    <property name="geometry">
+     <rect>
+      <x>190</x>
+      <y>320</y>
+      <width>261</width>
+      <height>29</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Восстановить из Мастер ключа</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="binbinLabel">
+    <property name="geometry">
+     <rect>
+      <x>270</x>
+      <y>120</y>
+      <width>111</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>bin bin</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_3">
+    <property name="geometry">
+     <rect>
+      <x>220</x>
+      <y>380</y>
+      <width>231</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Анонимность по умолчанию</string>
     </property>
    </widget>
   </widget>
-  <widget class="QMenuBar" name="menubar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>640</width>
-     <height>33</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QStatusBar" name="statusbar"/>
  </widget>
  <resources/>
  <connections/>

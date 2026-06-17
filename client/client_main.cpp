@@ -9,6 +9,10 @@
 #include "client_connection.h"
 #include "bip_39.h"
 
+#include <QApplication>
+#include <QFile>
+#include <mainwindow.h>
+
 using namespace std;
 using namespace boost::asio;
 
@@ -475,10 +479,17 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
     }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+
+    QApplication app(argc, argv);
+
     if (sodium_init() < 0) {
         cerr << "Error init sodium! " << endl;
         return -1;
+
+    MainWindow window;
+    window.show();
+        return app.exec();
     }
 
     Cryption cryption;

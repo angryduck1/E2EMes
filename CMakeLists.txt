@@ -45,15 +45,16 @@ add_executable(client WIN32
         client/client_connection.h
         client/bip_39.h
 
-        UI/MainWindow.cpp
-        UI/MainWindow.h
-        UI/MainWindow.ui
+        UI/mainwindow.cpp
+        UI/mainwindow.h
+        UI/mainwindow.ui
 )
 
-target_link_libraries(client PRIVATE Qt6::Core Qt6::Widgets
+target_link_libraries(client PRIVATE
         Qt6::Widgets
         Qt6::Gui
         Qt6::Core
+
 
         Boost::asio
         Boost::system
@@ -61,3 +62,5 @@ target_link_libraries(client PRIVATE Qt6::Core Qt6::Widgets
         nlohmann_json::nlohmann_json
         SQLite::SQLite3
 )
+
+target_include_directories(client PRIVATE UI)
