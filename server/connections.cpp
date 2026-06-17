@@ -83,6 +83,12 @@ string Connections::get_chat_id(const string &session_id, Redis &redis) {
     return chat_id;
 }
 
+void Connections::add_session_to_status(const string &session_id, Redis& redis) {
+    string chat_id = get_chat_id(session_id, redis);
+
+    redis.sadd("status:"+chat_id, session_id);
+}
+
 void Connections::update_activity(const string& session_id) {
     lock_guard<mutex> lock(mtx);
 
@@ -361,6 +367,7 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
                         new_message["data"]["nonce"] = message.nonce;
                         new_message["data"]["name_init"] = message.sender_name;
                         new_message["data"]["name_recp"] = message.recp_name;
+                        new_message["data"]["my_name"] = name_init;
                         new_message["data"]["message_id"] = message.message_id;
                         new_message["data"]["time"] = message.message_time;
 
@@ -383,10 +390,52 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
 
     vector<unsigned char> end_message_data = pack_data(end_message);
     send_package(end_message_data, cryption, session, *socket);
+
+    // sync_status (online/offline)
+
+    vector<unsigned char> sync_user_status = recv_package(cryption, session, *socket);
+    json sync_user_status_json = nlohmann::json::parse(sync_user_status.begin(), sync_user_status.end());
+
+    json sync_status_user_json = {
+        {"status", "sync_status"},
+        {"code", 700},
+        {"data", {}}
+    };
+
+    sync_status_user_json["data"] = json::array();
+
+    if (sync_user_status_json["status"] == "sync_status") {
+        for (auto& id : chat_list) {
+            if (id != "EMPTY_CHAT_ID") {
+                json status_user_info;
+
+                string name = *redis.hget("chat_ids:" + id, "name");
+
+                vector<string> active_sessions_list;
+                redis.smembers("status:"+id, inserter(active_sessions_list, active_sessions_list.end()));
+
+                status_user_info["name"] = name;
+
+                if (active_sessions_list.size() > 1) {
+                    status_user_info["status"] = "online";
+                } else {
+                    status_user_info["status"] = "offline";
+                }
+
+                sync_status_user_json["data"].push_back(status_user_info);
+            }
+        }
+    }
+
+    vector<unsigned char> sync_status_user_data = pack_data(sync_status_user_json);
+    send_package(sync_status_user_data, cryption, session, *socket);
 }
 
 void Connections::client_thread(const string& session_id, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket, Redis &redis) {
     update_activity(session_id);
+
+    add_session_to_status(session_id, redis);
+
     while (true) {
         try {
             vector<unsigned char> message = recv_package(cryption, session, *socket);

@@ -99,6 +99,17 @@ vector<unsigned char> convert_public_key(const string& public_key_hex) {
     return public_key;
 }
 
+vector<unsigned char> convert_message(const string& message_hex) {
+    vector<unsigned char> message(message_hex.size() / 2);
+    size_t bin_len;
+
+    if (sodium_hex2bin(message.data(), message.size(), message_hex.data(), message_hex.size(), nullptr, &bin_len, nullptr) != 0) {
+        throw runtime_error("Failed to convert message");
+    }
+
+    return message;
+}
+
 const string hex_to_string_convert_message(vector<unsigned char>& message) {
     string hex_salt(message.size() * 2, ' ');
     sodium_bin2hex(&hex_salt[0], hex_salt.size() + 1, message.data(), message.size());
@@ -162,6 +173,42 @@ vector<unsigned char> load_secret_initial(const string& file_name, vector<unsign
     }
 
     return decrypted_private_key;
+}
+
+vector<unsigned char> cryption_message(const string& message, vector<unsigned char>& nonce, vector<unsigned char>& general_key) {
+    vector<unsigned char> crypted_message(message.size() + crypto_secretbox_MACBYTES);
+
+    crypto_secretbox_easy(crypted_message.data(), reinterpret_cast<const unsigned char*>(message.data()), message.size(), nonce.data(), general_key.data());
+
+    return crypted_message;
+}
+
+string decryption_message(vector<unsigned char>& message_hex, vector<unsigned char>& nonce_hex, vector<unsigned char>& general_key) {
+    if (message_hex.size() < crypto_secretbox_MACBYTES) {
+        cout << "Message is corrupted!" << endl;
+        return "";
+    }
+
+    if (nonce_hex.size() != crypto_secretbox_NONCEBYTES) {
+        cout << "Error: Invalid nonce size!" << endl;
+        return "";
+    }
+
+    if (general_key.size() != crypto_secretbox_KEYBYTES) {
+        cout << "Error: Invalid key size!" << endl;
+        return "";
+    }
+
+    vector<unsigned char> decrypted_message(message_hex.size() - crypto_secretbox_MACBYTES);
+
+    if (crypto_secretbox_open_easy(decrypted_message.data(), reinterpret_cast<const unsigned char*>(message_hex.data()), message_hex.size(), nonce_hex.data(), general_key.data()) != 0) {
+        cout << "Failed decrypt message!" << endl;
+        return "";
+    }
+
+    string message_text(decrypted_message.begin(), decrypted_message.end());
+
+    return message_text;
 }
 
 bool check_exist_gen_key(const string& file_name) {

@@ -27,9 +27,15 @@ vector<unsigned char> convert_public_key(const string& public_key_hex);
 
 const string hex_to_string_convert_message(vector<unsigned char>& message);
 
+vector<unsigned char> convert_message(const string& message_hex);
+
 void generate_secret_initial(const string& file_name, vector<unsigned char>& password_hash, vector<unsigned char>& private_key, vector<unsigned char>& public_key_endpoint);
 
 vector<unsigned char> load_secret_initial(const string& file_name, vector<unsigned char>& password_hash);
+
+vector<unsigned char> cryption_message(const string& message, vector<unsigned char>& nonce, vector<unsigned char>& general_key);
+
+string decryption_message(vector<unsigned char>& message_hex, vector<unsigned char>& nonce_hex, vector<unsigned char>& general_key);
 
 bool check_exist_gen_key(const string& name);
 

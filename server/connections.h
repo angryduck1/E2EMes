@@ -73,6 +73,9 @@ public:
     void add_session(const string&, std::shared_ptr<tcp::socket>, Session& session);
     void client_thread(const string& session_id, Cryption& cryption, Session& session, shared_ptr<tcp::socket> socket, Redis& redis);
     void clean_disconnected(Redis& redis);
+
+    void add_session_to_status(const string &session_id, Redis& redis);
+
     void update_activity(const string& session_id);
     string get_chat_id(const string& session_id, Redis &redis);
     void new_chat(const string& session_id, const string& name, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket);
@@ -81,7 +84,9 @@ public:
     User add_new_message_to_bd(const string& name_init, const string& name_recp, const string& message, const string& nonce);
     User get_last_message_from_bd(const string& name_init, const string& name_recp);
     vector<User> get_last_messages_from_bd(const string& name_init, const string& name_recp, int& last_message_id);
-    vector<unsigned char> pack_data(json data_jsonW);
+
+    vector<unsigned char> pack_data(json data_json);
+    ;
 
     void init_bd(const string& file_name) {
         storage = create_storage(file_name);
