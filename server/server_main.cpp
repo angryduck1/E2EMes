@@ -97,7 +97,37 @@ void add_user_info_to_bd(const string& password, const string& name, const strin
 
     redis.sadd("chat_list:" + chat_id, "EMPTY_CHAT_ID");
 
+    redis.sadd("chats_ids_сounter", chat_id);
+
     redis.set("names:" + name, chat_id);
+}
+
+void clear_sessions(Redis& redis) {
+    vector<string> keys;
+
+    redis.smembers("chats_ids_сounter", inserter(keys, keys.end()));
+
+    if (!keys.empty()) {
+        for (string& chat_id : keys) {
+            vector<string> members_status;
+
+            redis.smembers("status:"+chat_id, inserter(members_status, members_status.end()));
+
+            if (!members_status.empty()) {
+                for (string& member : members_status) {
+                    if (member != "EMPTY_SESSION_ID") {
+                        redis.srem("status:"+chat_id, member);
+
+                        cout << "Clear " << member << endl;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void increment_users_counter(Redis& redis) {
+    redis.incr("users_counter");
 }
 
 int check_valid_session(const string& session_id, Redis& redis) {
@@ -208,6 +238,8 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
 
             vector<unsigned char> created_account_send = connections.pack_data(created_account);
             connections.send_package(created_account_send, cryption, session, *socket);
+
+            increment_users_counter(redis);
 
             connections.client_thread(new_session_id, cryption, session, socket, redis);
         } else {
@@ -371,6 +403,8 @@ int main() {
     tcp::acceptor acceptor(io_ctx, endpoint);
 
     cout << "Server is listening on port 8088" << endl;
+
+    clear_sessions(redis);
 
     thread manager_thread(manage_sessions, ref(redis), ref(connections));
 

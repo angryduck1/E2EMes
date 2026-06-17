@@ -56,6 +56,10 @@ bool ClientActivity::time_out_sync_activity() {
     return false;
 }
 
+void ClientActivity::clear_screen() {
+    system("cls"); // template
+}
+
 void ClientActivity::input_thread() {
     while (true) {
         string temp;
@@ -89,6 +93,26 @@ User ClientActivity::get_last_message_from_bd(const string &name_init, const str
     return {0};
 }
 
+vector<User> ClientActivity::get_chat_from_bd(const string &name_init, const string &name_recp) {
+    auto &storage = get_storage();
+
+    auto messages = storage.get_all<User>(
+        where(
+            or_(
+                and_(c(&User::sender_name) == name_init, c(&User::recp_name) == name_recp),
+                and_(c(&User::sender_name) == name_recp, c(&User::recp_name) == name_init)
+            )
+        ),
+        order_by(&User::message_id)
+    );
+
+    if (!messages.empty()) {
+        return messages;
+    }
+
+    return {};
+}
+
 void ClientActivity::add_new_message_to_bd(const string &name_init, const string &name_recp, const string &message,
                                            const string &nonce, int &message_id, time_t &time) {
     auto &storage = get_storage();
@@ -98,6 +122,23 @@ void ClientActivity::add_new_message_to_bd(const string &name_init, const string
     storage.insert(message_info);
 
     storage.sync_schema();
+}
+
+void ClientActivity::get_user_name() {
+    json get_own_name_json = {
+        {"status", "get_name"},
+        {"code", 900},
+        {"data", {}}
+    };
+
+    vector<unsigned char> get_own_name_data = pack_data(get_own_name_json);
+
+    send_package(get_own_name_data, cryption, session, socket);
+
+    vector<unsigned char> user_name_data = recv_package(cryption, session, socket);
+    json user_name_json = nlohmann::json::parse(user_name_data.begin(), user_name_data.end());
+
+    user_name = user_name_json["data"]["name"];
 }
 
 void ClientActivity::init_new_chat(const string &name) {
@@ -308,7 +349,6 @@ void ClientActivity::sync_cloud() {
             string nonce = sync_chat_json["data"]["nonce"];
             string name_init = sync_chat_json["data"]["name_init"];
             string name_recp = sync_chat_json["data"]["name_recp"];
-            string my_name = sync_chat_json["data"]["my_name"];
             int message_id = sync_chat_json["data"].value("message_id", 0);
             time_t time = sync_chat_json["data"].value("time", 0);
 
@@ -321,9 +361,9 @@ void ClientActivity::sync_cloud() {
 
             string partner_name = "";
 
-            if (name_init != my_name) {
+            if (name_init != user_name) {
                 partner_name = name_init;
-            } else if (name_recp != my_name) {
+            } else if (name_recp != user_name) {
                 partner_name = name_recp;
             }
 
@@ -349,7 +389,9 @@ void ClientActivity::sync_cloud() {
                 string name = user["name"];
                 string status = user["status"];
 
-                cout << "Current status " << name << " : " << status << endl;
+                users_status[name] = status;
+
+                // cout << "Current status " << name << " : " << status << endl;
             }
         }
 
@@ -368,6 +410,10 @@ void ClientActivity::main_thread() {
 
     while (true) {
         try {
+            if (user_name.empty()) {
+                get_user_name();
+            }
+
             if (newInput) {
                 lock_guard<mutex> lock(input_mutex);
 
@@ -414,6 +460,40 @@ void ClientActivity::main_thread() {
 
                     cout << "Request on sending new message was successful send!" << endl;
                 }
+
+                if (command == "/checkChat" && !argument.empty()) {
+                    size_t pos = argument.find_first_not_of(' ');
+
+                    string name = argument;
+
+                    if (pos != std::string::npos) {
+                        name = argument.substr(pos);
+                    }
+
+                    vector<User> messages = get_chat_from_bd(user_name, name);
+
+                    if (!messages.empty()) {
+                        clear_screen();
+
+                        if (users_status.contains(name)) {
+                            cout << name << " status: " << users_status[name] << endl;
+                        }
+
+                        for (User& message : messages) {
+                            vector<unsigned char> message_hex = convert_message(message.message);
+                            vector<unsigned char> nonce_hex = convert_message(message.nonce);
+
+                            string message_text = decryption_message(message_hex, nonce_hex, general_keys[name]);
+
+                            string name_init = message.sender_name;
+
+                            cout << name_init << " :" << message_text << endl;
+                        }
+                    } else {
+                        cout << "We dont`t have general chats with " << name << endl;
+                    }
+                }
+
                 running = true;
                 newInput = false;
             }

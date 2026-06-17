@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <sqlite_orm/sqlite_orm.h>
+#include <cstdlib>
 
 using namespace boost::asio;
 
@@ -61,6 +62,10 @@ private:
 
     any storage;
 
+    string user_name;
+
+    map<string, string> users_status;
+
     static auto create_storage(const string& file_name) {
         return make_storage(file_name, make_table("chats",
                 make_column("id", &User::id, primary_key().autoincrement()),
@@ -86,10 +91,12 @@ public:
     void main_thread();
     void input_thread();
     void init_new_chat(const string& name);
+    void get_user_name();
     void send_new_message(const string& name);
     void sync_cloud();
     User get_last_message_from_bd(const string& name_init, const string& name_recp);
     void add_new_message_to_bd(const string& name_init, const string& name_recp, const string& message, const string& nonce, int& message_id, time_t& time);
+    vector<User> get_chat_from_bd(const string &name_init, const string &name_recp);
     void init_bd(const string& file_name) {
         storage = create_storage(file_name);
 
@@ -97,6 +104,7 @@ public:
 
         db.sync_schema();
     };
+    void clear_screen();
 };
 
 #endif //E2EMES_CLIENT_ACTIVITY_H

@@ -242,6 +242,20 @@ void Connections::new_message(const string& session_id, const string& name, Redi
     }
 }
 
+void Connections::get_user_name(const string& name, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket) {
+    json user_name_json = {
+        {"status", "get_name"},
+        {"code", 900},
+        {"data", {}}
+    };
+
+    user_name_json["data"]["name"] = name;
+
+    vector<unsigned char> user_name_data = pack_data(user_name_json);
+
+    send_package(user_name_data, cryption, session, *socket);
+}
+
 void Connections::sync_client(const string& session_id, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket) {
     string chat_id = get_chat_id(session_id, redis);
 
@@ -367,7 +381,6 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
                         new_message["data"]["nonce"] = message.nonce;
                         new_message["data"]["name_init"] = message.sender_name;
                         new_message["data"]["name_recp"] = message.recp_name;
-                        new_message["data"]["my_name"] = name_init;
                         new_message["data"]["message_id"] = message.message_id;
                         new_message["data"]["time"] = message.message_time;
 
@@ -458,6 +471,13 @@ void Connections::client_thread(const string& session_id, Cryption &cryption, Se
                     string name = message_json["data"]["name"];
 
                     new_message(session_id, name, redis, cryption, session, socket);
+                }
+
+                if (message_json["code"] == 900) {
+                    string chat_id = get_chat_id(session_id, redis);
+                    string name = *redis.hget("chat_ids:" + chat_id, "name");
+
+                    get_user_name(name, redis, cryption, session, socket);
                 }
             }
         } catch (const system_error& e) {
