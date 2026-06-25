@@ -1,6 +1,6 @@
-# EE2E Messenger writed on C++. <BinBin>
+# EE2E Messenger writed on C++. **BinBin**
 
-Copyright (C) 2026 <BinBin>
+Copyright (C) 2026 **BinBin**
 
 ![C++](https://img.shields.io/badge/C++-20-blue?logo=cplusplus&logoColor=white)
 ![Boost.Asio](https://img.shields.io/badge/Boost.Asio-1.74+-green)
