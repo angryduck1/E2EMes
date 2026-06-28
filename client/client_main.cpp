@@ -329,7 +329,7 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
                 cin >> name;
 
                 cout << "Enter password: " << endl;
-                cin >> password;
+               cin >> password;
 
                 string hex_public_key(crypto_box_PUBLICKEYBYTES * 2, ' ');
                 sodium_bin2hex(&hex_public_key[0], hex_public_key.size() + 1, session_data.public_key.data(), crypto_box_PUBLICKEYBYTES);
@@ -483,14 +483,15 @@ int main(int argc, char *argv[]) {
 
     QApplication app(argc, argv);
 
-    if (sodium_init() < 0) {
+    if (sodium_init() < 0)
+    {
         cerr << "Error init sodium! " << endl;
         return -1;
-
+    }
     MainWindow window;
     window.show();
         return app.exec();
-    }
+
 
     Cryption cryption;
 
