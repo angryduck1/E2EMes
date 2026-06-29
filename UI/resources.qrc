@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/lock.svg</file>
+        <file>icons/key.svg</file>
+        <file>icons/user.svg</file>
+        <file>icons/shield.svg</file>
+    </qresource>
+</RCC>

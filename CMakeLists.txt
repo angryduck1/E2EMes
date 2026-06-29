@@ -48,6 +48,8 @@ add_executable(client WIN32
         UI/mainwindow.cpp
         UI/mainwindow.h
         UI/mainwindow.ui
+        UI/resources.qrc
+        UI/styles/resources.qss
 )
 
 target_link_libraries(client PRIVATE

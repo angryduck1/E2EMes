@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <iostream>
-#include <QMessageBox>
+#include <QFile>
 #include <thread>
 #include <QStackedWidget>
 
@@ -13,6 +13,26 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     ui->stackedWidget->setCurrentIndex(0);
     connect(this, &MainWindow::loginTrySignal, this, &MainWindow::on_loginTrySignal);
+
+    //icons for main window
+
+    QPixmap lockIcon(":/icons/lock.svg");
+    ui->lockLabel->setPixmap(lockIcon.scaled(60,60 ,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+
+    QPixmap shieldIcon(":/icons/shield.svg");
+    ui->shieldLabel->setPixmap(shieldIcon.scaled(20,20,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+
+    //page 1
+    QFile fileQss(":/styles/resources.qss");    //icon inside LoginUserName
+    if ( fileQss.open(QFile::ReadOnly))
+    {
+        setStyleSheet(QLatin1String(fileQss.readAll()));
+
+        fileQss.close();
+    }
+    QAction *userIcon = new QAction(this);
+    userIcon->setIcon(QIcon(":/icons/user.svg"));
+    ui->userLoginName->addAction(userIcon, QLineEdit::LeadingPosition);
 }
 
 MainWindow::~MainWindow()
