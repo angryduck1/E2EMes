@@ -30,9 +30,13 @@ MainWindow::MainWindow(QWidget *parent) :
 
         fileQss.close();
     }
-    QAction *userIcon = new QAction(this);
-    userIcon->setIcon(QIcon(":/icons/user.svg"));
-    ui->userLoginName->addAction(userIcon, QLineEdit::LeadingPosition);
+    QAction *userLoginNameIcon = new QAction(this);
+    userLoginNameIcon->setIcon(QIcon(":/icons/user.svg"));
+    ui->userLoginName->addAction(userLoginNameIcon, QLineEdit::LeadingPosition);
+
+    QAction *userLoginPasswordIcon = new QAction(this);
+    userLoginPasswordIcon->setIcon(QIcon(":/icons/key.svg"));
+    ui->userLoginPassword->addAction(userLoginPasswordIcon, QLineEdit::LeadingPosition);
 }
 
 MainWindow::~MainWindow()

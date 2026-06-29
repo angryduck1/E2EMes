@@ -1,4 +1,7 @@
 QLineEdit#userLoginName {
     padding-left: 20px;
+}
 
+QLineEdit#userLoginPassword{
+    padding-left: 20px;
 }
