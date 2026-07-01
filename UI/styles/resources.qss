@@ -5,3 +5,14 @@ QLineEdit#userLoginName {
 QLineEdit#userLoginPassword{
     padding-left: 20px;
 }
+
+QPushButton#loginButton {
+    background-color: #6C3FD6;
+    border-radius: 10px;
+    color: white;
+    font-size: 14px;
+}
+QMainWindow{
+
+background-color: #1a1b2e;
+}

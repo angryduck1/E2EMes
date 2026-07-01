@@ -10,17 +10,26 @@ MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
+
+    setFixedSize(1280,720);
     ui->setupUi(this);
     ui->stackedWidget->setCurrentIndex(0);
     connect(this, &MainWindow::loginTrySignal, this, &MainWindow::on_loginTrySignal);
 
     //icons for main window
 
-    QPixmap lockIcon(":/icons/lock.svg");
-    ui->lockLabel->setPixmap(lockIcon.scaled(60,60 ,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+    QIcon lockIcon(":/icons/lock.svg");
+   ui->lockLabel->setPixmap(lockIcon.pixmap(60,60));
+    ui->lockLabel->setAlignment(Qt::AlignCenter);
+    ui->lockLabel->setStyleSheet(
+    "background-color: #6C3FD6;"
+    "border-radius: 40px;"
+);
 
-    QPixmap shieldIcon(":/icons/shield.svg");
-    ui->shieldLabel->setPixmap(shieldIcon.scaled(20,20,Qt::KeepAspectRatio,Qt::SmoothTransformation));
+    QIcon shieldIcon(":/icons/shield.svg");
+    ui->shieldLabel->setPixmap(shieldIcon.pixmap(20,20));
+
+
 
     //page 1
     QFile fileQss(":/styles/resources.qss");    //icon inside LoginUserName
