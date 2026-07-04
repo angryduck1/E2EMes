@@ -24,7 +24,7 @@
      </rect>
     </property>
     <property name="currentIndex">
-     <number>0</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="mainPage">
      <widget class="QLabel" name="binbinLabel">
@@ -57,7 +57,7 @@
       <property name="geometry">
        <rect>
         <x>490</x>
-        <y>350</y>
+        <y>290</y>
         <width>300</width>
         <height>50</height>
        </rect>
@@ -70,26 +70,13 @@
       <property name="geometry">
        <rect>
         <x>490</x>
-        <y>285</y>
+        <y>390</y>
         <width>300</width>
         <height>50</height>
        </rect>
       </property>
       <property name="text">
        <string>login</string>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="recoveryButton">
-      <property name="geometry">
-       <rect>
-        <x>490</x>
-        <y>415</y>
-        <width>300</width>
-        <height>50</height>
-       </rect>
-      </property>
-      <property name="text">
-       <string>Use recovery key</string>
       </property>
      </widget>
      <widget class="QLabel" name="label">
@@ -163,11 +150,24 @@
         <x>420</x>
         <y>270</y>
         <width>431</width>
-        <height>221</height>
+        <height>201</height>
        </rect>
       </property>
       <property name="text">
        <string/>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_5">
+      <property name="geometry">
+       <rect>
+        <x>547</x>
+        <y>353</y>
+        <width>241</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ or⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯</string>
       </property>
      </widget>
      <zorder>backLabel</zorder>
@@ -175,12 +175,12 @@
      <zorder>label_2</zorder>
      <zorder>createAccount</zorder>
      <zorder>loginButton</zorder>
-     <zorder>recoveryButton</zorder>
      <zorder>label</zorder>
      <zorder>label_3</zorder>
      <zorder>label_4</zorder>
      <zorder>lockLabel</zorder>
      <zorder>shieldLabel</zorder>
+     <zorder>label_5</zorder>
     </widget>
     <widget class="QWidget" name="userLoginPage">
      <widget class="QPushButton" name="userLoginButton">
@@ -256,6 +256,34 @@
       </property>
       <property name="text">
        <string>username</string>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="page">
+     <widget class="QPushButton" name="pushButton">
+      <property name="geometry">
+       <rect>
+        <x>170</x>
+        <y>150</y>
+        <width>90</width>
+        <height>29</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>PushButton</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="recoveryButton">
+      <property name="geometry">
+       <rect>
+        <x>140</x>
+        <y>220</y>
+        <width>300</width>
+        <height>50</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Use recovery key</string>
       </property>
      </widget>
     </widget>
