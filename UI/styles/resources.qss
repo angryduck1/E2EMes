@@ -1,7 +1,9 @@
 QPushButton#loginButton {
-    background-color: #6C3FD6;
+    background-color: #6C3FD8;
     border: 1px solid #FFF;
     border-radius: 20px;
+    color: #FFFFFF;
+     font-weight: bold;
 
 }
 
@@ -9,10 +11,60 @@ QPushButton#createAccount{
 background-color: transparent;
 border: 1px solid #FFF;
 border-radius: 20px;
+color: #8888aa;
+ font-weight: bold;
 }
 
 QPushButton#recoveryButton{
 background-color: transparent;
 border: 1px solid #FFF;
 border-radius: 20px;
+color: #8888aa;
+ font-weight: bold;
+}
+
+QLabel#lockLabel{
+background-color: #6C3FD6;
+border: 1px;
+border-radius: 50px;
+}
+
+QLabel#backLabel{
+background-color: #2A2A2A;
+border: 1px solid #fff;
+border-radius: 10px;
+}
+
+
+
+QWidget {
+    font-family: "Segoe UI";
+    color: white;
+}
+
+QLabel#binbinLabel {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+QLabel#label_2 {
+    font-size: 15px;
+    font-weight: bold;
+}
+
+QLabel#label {
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QLabel#label_3{
+    font-size: 13px;
+    color: #8888aa;
+    font-weight: bold;
+}
+
+QLabel#label_4{
+    font-size: 12px;
+    color: #8888aa;
+    font-weight: bold;
 }

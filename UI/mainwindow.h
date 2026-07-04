@@ -41,6 +41,9 @@ private:
     std::string password;
 
     Ui::MainWindow *ui;
+
+
+
 };
 
 #endif // MAINWINDOW_H
