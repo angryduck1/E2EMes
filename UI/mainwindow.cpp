@@ -110,13 +110,13 @@ void MainWindow::on_userLoginButton_clicked()
 
 void MainWindow::paintEvent(QPaintEvent *event)
 {
-    QMainWindow::paintEvent(event); // сначала рисуем стандартный фон
+    QMainWindow::paintEvent(event);
 
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing); // сглаживание краёв
+    painter.setRenderHint(QPainter::Antialiasing);
 
     // большой размытый круг слева вверху
-    painter.setBrush(QColor(108, 63, 214, 60)); // фиолетовый, полупрозрачный
+    painter.setBrush(QColor(108, 63, 214, 60));
     painter.setPen(Qt::NoPen); // без рамки
     painter.drawEllipse(-100, -100, 400, 400);
 
