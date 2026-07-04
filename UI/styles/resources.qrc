@@ -4,5 +4,6 @@
         <file>icons/key.svg</file>
         <file>icons/user.svg</file>
         <file>icons/shield.svg</file>
+        <file>resources.qss</file>
     </qresource>
 </RCC>

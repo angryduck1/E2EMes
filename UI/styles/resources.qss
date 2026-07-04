@@ -1,18 +1,18 @@
-QLineEdit#userLoginName {
-    padding-left: 20px;
-}
-
-QLineEdit#userLoginPassword{
-    padding-left: 20px;
-}
-
 QPushButton#loginButton {
     background-color: #6C3FD6;
-    border-radius: 10px;
-    color: white;
-    font-size: 14px;
-}
-QMainWindow{
+    border: 1px solid #FFF;
+    border-radius: 20px;
 
-background-color: #1a1b2e;
+}
+
+QPushButton#createAccount{
+background-color: transparent;
+border: 1px solid #FFF;
+border-radius: 20px;
+}
+
+QPushButton#recoveryButton{
+background-color: transparent;
+border: 1px solid #FFF;
+border-radius: 20px;
 }
