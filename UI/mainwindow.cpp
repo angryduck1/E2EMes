@@ -5,19 +5,22 @@
 #include <QMessageBox>
 #include <thread>
 #include <QStackedWidget>
+#include <QPainter>
 
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
+
+
     QFile fileQss(":/resources.qss");    //icon inside LoginUserName
     if (fileQss.open(QFile::ReadOnly))
     {
         QString style = QLatin1String(fileQss.readAll());
         setStyleSheet(style);
         fileQss.close();
-        
+
 
     } else
     {
@@ -54,7 +57,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->userLoginPassword->addAction(userLoginPasswordIcon, QLineEdit::LeadingPosition);
 
 
-
+    setWindowTitle("BinBin");
 }
 
 MainWindow::~MainWindow()
@@ -103,4 +106,21 @@ void MainWindow::on_userLoginButton_clicked()
      password = QUserPassword.toStdString();
 
 
+}
+
+void MainWindow::paintEvent(QPaintEvent *event)
+{
+    QMainWindow::paintEvent(event); // сначала рисуем стандартный фон
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing); // сглаживание краёв
+
+    // большой размытый круг слева вверху
+    painter.setBrush(QColor(108, 63, 214, 60)); // фиолетовый, полупрозрачный
+    painter.setPen(Qt::NoPen); // без рамки
+    painter.drawEllipse(-100, -100, 400, 400);
+
+    // круг справа внизу
+    painter.setBrush(QColor(108, 63, 214, 40));
+    painter.drawEllipse(1050, 450, 350, 350);
 }

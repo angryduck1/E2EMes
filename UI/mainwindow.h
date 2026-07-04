@@ -43,7 +43,8 @@ private:
     Ui::MainWindow *ui;
 
 
-
+protected:
+    void paintEvent(QPaintEvent *event) override;
 };
 
 #endif // MAINWINDOW_H
