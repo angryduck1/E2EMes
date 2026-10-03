@@ -15,7 +15,7 @@ use anyhow::Context;
 use tokio::{net::TcpListener, sync::Semaphore};
 use tracing::{info, warn};
 
-pub use db::Db;
+use crate::db::Db;
 
 /// Upper bound on simultaneous connections.
 const MAX_CONNECTIONS: usize = 4096;
