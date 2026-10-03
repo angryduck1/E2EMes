@@ -43,7 +43,7 @@ vector<unsigned char> Connections::recv_package(Cryption& cryption, Session& ses
 
         payload_size = ntohl(payload_size);
 
-        if (payload_size < 4 + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES || payload_size > 1024) {
+        if (payload_size < 4 + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES || payload_size > MAX_PACKAGE_SIZE) {
             cerr << "Invalid structure of payload" << endl;
 
             return {};
@@ -77,10 +77,20 @@ vector<unsigned char> Connections::pack_data(json data_json) {
     return data;
 }
 
-string Connections::get_chat_id(const string &session_id, Redis &redis) {
-    string chat_id = *redis.hget("sessions:" + session_id, "chat_id");
+static string hget_or_empty(Redis &redis, const string& key, const string& field) {
+    auto value = redis.hget(key, field);
 
-    return chat_id;
+    return value ? *value : string();
+}
+
+string Connections::get_chat_id(const string &session_id, Redis &redis) {
+    auto chat_id = redis.hget("sessions:" + session_id, "chat_id");
+
+    if (!chat_id) {
+        throw runtime_error("Unknown session " + session_id);
+    }
+
+    return *chat_id;
 }
 
 void Connections::add_session_to_status(const string &session_id, Redis& redis) {
@@ -92,7 +102,12 @@ void Connections::add_session_to_status(const string &session_id, Redis& redis) 
 void Connections::update_activity(const string& session_id) {
     lock_guard<mutex> lock(mtx);
 
-    sessionIds[session_id].last_activity = std::chrono::steady_clock::now();
+    // operator[] would recreate a session already removed by clean_disconnected() with a null socket
+    auto it = sessionIds.find(session_id);
+
+    if (it != sessionIds.end()) {
+        it->second.last_activity = std::chrono::steady_clock::now();
+    }
 }
 
 void Connections::add_session(const string& session_id,  std::shared_ptr<tcp::socket> socket_ptr, Session& session) {
@@ -102,6 +117,8 @@ void Connections::add_session(const string& session_id,  std::shared_ptr<tcp::so
 }
 
 User Connections::add_new_message_to_bd(const string& name_init, const string& name_recp, const string& message, const string& nonce) {
+    lock_guard<mutex> lock(db_mtx);
+
     auto& storage = get_storage();
 
     auto tx = storage.transaction_guard();
@@ -124,6 +141,8 @@ User Connections::add_new_message_to_bd(const string& name_init, const string& n
 }
 
 User Connections::get_last_message_from_bd(const string& name_init, const string& name_recp) {
+    lock_guard<mutex> lock(db_mtx);
+
     auto& storage = get_storage();
 
     auto messages = storage.get_all<User>(where(or_(c(&User::sender_name) == name_init && c(&User::recp_name) == name_recp, c(&User::recp_name) == name_init && c(&User::sender_name) == name_recp)), order_by(&User::message_id).desc(), limit(1));
@@ -136,6 +155,8 @@ User Connections::get_last_message_from_bd(const string& name_init, const string
 }
 
 vector<User> Connections::get_last_messages_from_bd(const string& name_init, const string& name_recp, int& last_message_id) {
+    lock_guard<mutex> lock(db_mtx);
+
     auto& storage = get_storage();
 
     auto messages = storage.get_all<User>(where(c(&User::message_id) > last_message_id && or_(c(&User::sender_name) == name_init && c(&User::recp_name) == name_recp, c(&User::recp_name) == name_init && c(&User::sender_name) == name_recp)), order_by(&User::message_id).asc(), limit(50));
@@ -148,13 +169,13 @@ vector<User> Connections::get_last_messages_from_bd(const string& name_init, con
 }
 
 void Connections::new_chat(const string& session_id, const string& name, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket) {
-    if (redis.exists("names:"+name)) {
-        string chat_id = *redis.get("names:" + name);
+    if (auto chat_id_opt = redis.get("names:" + name)) {
+        string chat_id = *chat_id_opt;
         string chat_id_init = get_chat_id(session_id, redis);
 
         redis.sadd("new_chat_queue:"+chat_id, chat_id_init);
 
-        string public_key = *redis.hget("chat_ids:"+chat_id, "public_key");
+        string public_key = hget_or_empty(redis, "chat_ids:" + chat_id, "public_key");
 
         json new_chat = {
             {"status", "new_chat"},
@@ -179,8 +200,8 @@ void Connections::new_chat(const string& session_id, const string& name, Redis &
 }
 
 void Connections::new_message(const string& session_id, const string& name, Redis &redis, Cryption &cryption, Session &session, shared_ptr<tcp::socket> socket) {
-    if (redis.exists("names:"+name)) {
-        string chat_id = *redis.get("names:" + name);
+    if (auto chat_id_opt = redis.get("names:" + name)) {
+        string chat_id = *chat_id_opt;
         string chat_id_init = get_chat_id(session_id, redis);
 
         bool chat_exist = redis.sismember("chat_list:"+chat_id, chat_id_init);
@@ -203,7 +224,7 @@ void Connections::new_message(const string& session_id, const string& name, Redi
             string message = message_json["data"]["message"];
             string nonce = message_json["data"]["nonce"];
 
-            string name_init = *redis.hget("chat_ids:" + chat_id_init, "name");
+            string name_init = hget_or_empty(redis, "chat_ids:" + chat_id_init, "name");
 
             User message_info = add_new_message_to_bd(name_init, name, message, nonce);
 
@@ -275,8 +296,8 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
         for (auto& id : new_chat_queue) {
             if (id != "EMPTY_CHAT_ID") {
                 json user_info;
-                string name = *redis.hget("chat_ids:" + id, "name");
-                string public_key = *redis.hget("chat_ids:" + id, "public_key");
+                string name = hget_or_empty(redis, "chat_ids:" + id, "name");
+                string public_key = hget_or_empty(redis, "chat_ids:" + id, "public_key");
 
                 user_info["name"] = name;
                 user_info["public_key"] = public_key;
@@ -295,8 +316,21 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
     if (sync_status_json["status"] == "sync_ok") {
         if (sync_status_json["data"].is_array()) {
             for (auto& user : sync_status_json["data"]) {
+                if (!user.contains("name") || !user["name"].is_string()) continue;
+
                 string name = user["name"];
-                string chat_id_init = *redis.get("names:" + name);
+                auto chat_id_init_opt = redis.get("names:" + name);
+
+                if (!chat_id_init_opt) continue;
+
+                string chat_id_init = *chat_id_init_opt;
+
+                // Only answer requests that were actually queued for this user,
+                // otherwise a client could force a chat with anyone.
+                if (chat_id_init == "EMPTY_CHAT_ID" || !redis.sismember("new_chat_queue:" + chat_id, chat_id_init)) {
+                    cout << chat_id << " tried to accept a chat that was never requested: " << name << endl;
+                    continue;
+                }
 
                 redis.srem("new_chat_queue:" + chat_id, chat_id_init);
 
@@ -324,14 +358,14 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
 
     redis.smembers("chat_list:" + chat_id, inserter(chat_list, chat_list.end()));
 
-    string name_init = *redis.hget("chat_ids:"+chat_id, "name");
+    string name_init = hget_or_empty(redis, "chat_ids:" + chat_id, "name");
 
     if (chat_list.size() > 1) {
         for (auto& id : chat_list) {
             if (id != "EMPTY_CHAT_ID") {
                 json user_info;
-                string name = *redis.hget("chat_ids:" + id, "name");
-                string public_key = *redis.hget("chat_ids:" + id, "public_key");
+                string name = hget_or_empty(redis, "chat_ids:" + id, "name");
+                string public_key = hget_or_empty(redis, "chat_ids:" + id, "public_key");
 
                 User message_info = get_last_message_from_bd(name_init, name);
 
@@ -422,7 +456,7 @@ void Connections::sync_client(const string& session_id, Redis &redis, Cryption &
             if (id != "EMPTY_CHAT_ID") {
                 json status_user_info;
 
-                string name = *redis.hget("chat_ids:" + id, "name");
+                string name = hget_or_empty(redis, "chat_ids:" + id, "name");
 
                 vector<string> active_sessions_list;
                 redis.smembers("status:"+id, inserter(active_sessions_list, active_sessions_list.end()));
@@ -475,7 +509,7 @@ void Connections::client_thread(const string& session_id, Cryption &cryption, Se
 
                 if (message_json["code"] == 900) {
                     string chat_id = get_chat_id(session_id, redis);
-                    string name = *redis.hget("chat_ids:" + chat_id, "name");
+                    string name = hget_or_empty(redis, "chat_ids:" + chat_id, "name");
 
                     get_user_name(name, redis, cryption, session, socket);
                 }
@@ -503,8 +537,10 @@ void Connections::clean_disconnected(Redis& redis) {
 
                 boost::system::error_code ec;
 
-                it->second.socket->shutdown(tcp::socket::shutdown_both, ec);
-                it->second.socket->close(ec);
+                if (it->second.socket) {
+                    it->second.socket->shutdown(tcp::socket::shutdown_both, ec);
+                    it->second.socket->close(ec);
+                }
 
                 sessions_to_remove.push_back(it->first);
 
@@ -516,10 +552,10 @@ void Connections::clean_disconnected(Redis& redis) {
     }
 
     for (auto i : sessions_to_remove) {
-        string chat_id = get_chat_id(i, redis);
+        auto chat_id = redis.hget("sessions:" + i, "chat_id");
 
-        if (!chat_id.empty()) {
-            redis.srem("status:"+chat_id, i);
+        if (chat_id) {
+            redis.srem("status:" + *chat_id, i);
         }
     }
 

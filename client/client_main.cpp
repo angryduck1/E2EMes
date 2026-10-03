@@ -19,6 +19,12 @@ using json = nlohmann::json;
 const int SESSION_SIZE = 64;
 const int SEED_SIZE = 12;
 
+// session_token.data: nonce_session | salt | secretbox(session_id) | nonce_key | secretbox(private_key) | public_key
+// Each secretbox needs its own nonce: reusing one nonce with the same key leaks the XOR of both plaintexts.
+const size_t SESSION_FILE_SIZE = crypto_secretbox_NONCEBYTES + crypto_pwhash_SALTBYTES + SESSION_SIZE + crypto_secretbox_MACBYTES + crypto_secretbox_NONCEBYTES + crypto_box_SECRETKEYBYTES + crypto_secretbox_MACBYTES + crypto_box_PUBLICKEYBYTES;
+// Older layout with one shared nonce.
+const size_t LEGACY_SESSION_FILE_SIZE = SESSION_FILE_SIZE - crypto_secretbox_NONCEBYTES;
+
 struct SessionData {
     string session_id;
     vector<unsigned char> private_key;
@@ -53,6 +59,11 @@ int load_binary_key(const string& file_name, unsigned char* key, size_t key_len)
 
     file.read(reinterpret_cast<char*>(key), key_len);
 
+    if (file.gcount() != static_cast<streamsize>(key_len)) {
+        cerr << "Key file " << file_name << " is too short" << endl;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -72,6 +83,9 @@ SessionData save_session_token_master_key(const string& file_name, const string&
 
     unsigned char nonce[crypto_secretbox_NONCEBYTES];
     randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
+
+    unsigned char nonce_key[crypto_secretbox_NONCEBYTES];
+    randombytes_buf(nonce_key, crypto_secretbox_NONCEBYTES);
 
     unsigned char salt[crypto_pwhash_SALTBYTES];
     randombytes_buf(salt, crypto_pwhash_SALTBYTES);
@@ -107,7 +121,7 @@ SessionData save_session_token_master_key(const string& file_name, const string&
     }
 
     vector<unsigned char> encrypted_private_key(private_key.size() + crypto_secretbox_MACBYTES);
-    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce, password_hash.data());
+    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce_key, password_hash.data());
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -119,6 +133,7 @@ SessionData save_session_token_master_key(const string& file_name, const string&
         file.write(reinterpret_cast<const char*>(nonce), crypto_secretbox_NONCEBYTES);
         file.write(reinterpret_cast<const char*>(salt), crypto_pwhash_SALTBYTES);
         file.write(reinterpret_cast<const char*>(encrypted_session.data()), encrypted_session.size());
+        file.write(reinterpret_cast<const char*>(nonce_key), crypto_secretbox_NONCEBYTES);
         file.write(reinterpret_cast<const char*>(encrypted_private_key.data()), encrypted_private_key.size());
         file.write(reinterpret_cast<const char*>(public_key.data()), crypto_box_PUBLICKEYBYTES);
     } else {
@@ -148,6 +163,9 @@ SessionData save_session_token_load_master_key(const string& file_name, const st
 
     unsigned char nonce[crypto_secretbox_NONCEBYTES];
     randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
+
+    unsigned char nonce_key[crypto_secretbox_NONCEBYTES];
+    randombytes_buf(nonce_key, crypto_secretbox_NONCEBYTES);
 
     unsigned char salt[crypto_pwhash_SALTBYTES];
     randombytes_buf(salt, crypto_pwhash_SALTBYTES);
@@ -189,7 +207,7 @@ SessionData save_session_token_load_master_key(const string& file_name, const st
     }
 
     vector<unsigned char> encrypted_private_key(private_key.size() + crypto_secretbox_MACBYTES);
-    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce, password_hash.data());
+    crypto_secretbox_easy(encrypted_private_key.data(), reinterpret_cast<const unsigned char*>(private_key.data()), private_key.size(), nonce_key, password_hash.data());
 
     ofstream file(file_name, ios::out | ios::binary);
 
@@ -199,6 +217,7 @@ SessionData save_session_token_load_master_key(const string& file_name, const st
         file.write(reinterpret_cast<const char*>(nonce), crypto_secretbox_NONCEBYTES);
         file.write(reinterpret_cast<const char*>(salt), crypto_pwhash_SALTBYTES);
         file.write(reinterpret_cast<const char*>(encrypted_session.data()), encrypted_session.size());
+        file.write(reinterpret_cast<const char*>(nonce_key), crypto_secretbox_NONCEBYTES);
         file.write(reinterpret_cast<const char*>(encrypted_private_key.data()), encrypted_private_key.size());
         file.write(reinterpret_cast<const char*>(public_key_check.data()), crypto_box_PUBLICKEYBYTES);
     } else {
@@ -221,7 +240,11 @@ SessionData load_session_token_master_key(const string& file_name) {
 
     streamsize file_size = file.tellg();
 
-    if (file_size < static_cast<streamsize>(crypto_secretbox_NONCEBYTES + crypto_pwhash_SALTBYTES + crypto_secretbox_MACBYTES)) {
+    if (file_size == static_cast<streamsize>(LEGACY_SESSION_FILE_SIZE)) {
+        throw runtime_error("session_token.data has an old insecure format. Delete it and log in again with your name, password and master password.");
+    }
+
+    if (file_size != static_cast<streamsize>(SESSION_FILE_SIZE)) {
         throw runtime_error("Invalid structure of session token!");
     }
 
@@ -232,6 +255,7 @@ SessionData load_session_token_master_key(const string& file_name) {
     cin >> password;
 
     unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    unsigned char nonce_key[crypto_secretbox_NONCEBYTES];
     unsigned char salt[crypto_pwhash_SALTBYTES];
 
     vector <unsigned char> crypted_session(SESSION_SIZE + crypto_secretbox_MACBYTES);
@@ -241,6 +265,7 @@ SessionData load_session_token_master_key(const string& file_name) {
     file.read(reinterpret_cast<char*>(nonce), crypto_secretbox_NONCEBYTES);
     file.read(reinterpret_cast<char*>(salt), crypto_pwhash_SALTBYTES);
     file.read(reinterpret_cast<char*>(crypted_session.data()), crypted_session.size());
+    file.read(reinterpret_cast<char*>(nonce_key), crypto_secretbox_NONCEBYTES);
     file.read(reinterpret_cast<char*>(crypted_private_key.data()), crypted_private_key.size());
     file.read(reinterpret_cast<char*>(public_key.data()), public_key.size());
 
@@ -260,7 +285,7 @@ SessionData load_session_token_master_key(const string& file_name) {
 
     vector <unsigned char> decrypted_private_key(crypted_private_key.size() - crypto_secretbox_MACBYTES);
 
-    if (crypto_secretbox_open_easy(decrypted_private_key.data(), crypted_private_key.data(), crypted_private_key.size(), nonce, password_hash.data()) != 0) {
+    if (crypto_secretbox_open_easy(decrypted_private_key.data(), crypted_private_key.data(), crypted_private_key.size(), nonce_key, password_hash.data()) != 0) {
         throw runtime_error("Password is invalid!");
     }
 
@@ -366,7 +391,7 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
                     else if (name_resp_json["status"] == "timeout_exceeded") {
                         cout << "Attempts has been exceeded" << endl;
 
-                        throw exception("Please, try to register again");
+                        throw runtime_error("Please, try to register again");
                     }
                     else if (name_resp_json["status"] == "created_account" && name_resp_json["code"] == 200) {
                         cout << name << ", Your account was successful added to server!" << endl;
@@ -473,6 +498,9 @@ SessionData login(Cryption& cryption, Session& session, tcp::socket& socket) {
             }
         }
     }
+
+    // Every successful path returns above; falling off the end of a non-void function is UB.
+    throw runtime_error("Failed to log in");
 }
 
 int main() {
@@ -487,7 +515,10 @@ int main() {
 
     unsigned char pk_server[crypto_kx_PUBLICKEYBYTES];
 
-    load_binary_key("open_key.bin", pk_server, crypto_kx_PUBLICKEYBYTES);
+    if (load_binary_key("open_key.bin", pk_server, crypto_kx_PUBLICKEYBYTES) != 0) {
+        cerr << "Failed read server public key" << endl;
+        return -1;
+    }
 
     Session session = cryption.generate_client_session_keypair(pk_server);
 
@@ -509,7 +540,8 @@ int main() {
         ClientActivity activity(session, cryption, socket, session_data.password_hash, session_data.public_key, session_data.private_key);
         activity.main_thread();
 
-    } catch (const system_error& e) {
+    } catch (const exception& e) {
+        // login() reports failures via runtime_error and json errors, not only system_error
         cout << "Client error: " << e.what() << endl;
     }
 }

@@ -43,7 +43,7 @@ vector<unsigned char> recv_package(Cryption& cryption, Session& session, tcp::so
 
         payload_size = ntohl(payload_size);
 
-        if (payload_size < 4 + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES || payload_size > 1024) {
+        if (payload_size < 4 + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES || payload_size > MAX_PACKAGE_SIZE) {
             cerr << "Invalid structure of payload" << endl;
 
             return {};
@@ -234,4 +234,21 @@ bool check_exist_gen_key(const string& file_name) {
     file.close();
 
     return true;
+}
+
+string gen_key_file(const string& name) {
+    // The name comes from the server, so don't let it escape the working directory.
+    bool valid = !name.empty() && name.size() <= 32;
+
+    for (char ch : name) {
+        if (!isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-') {
+            valid = false;
+        }
+    }
+
+    if (!valid) {
+        throw runtime_error("Invalid user name: " + name);
+    }
+
+    return "gen_key_" + name + ".data";
 }

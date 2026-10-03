@@ -3,6 +3,10 @@
 
 #include <sodium.h>
 #include <vector>
+#include <cstdint>
+
+// Max size of one encrypted frame (nonce + MAC + payload).
+constexpr uint32_t MAX_PACKAGE_SIZE = 64 * 1024;
 
 class Session {
 public:

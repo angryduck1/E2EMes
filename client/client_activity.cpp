@@ -57,7 +57,11 @@ bool ClientActivity::time_out_sync_activity() {
 }
 
 void ClientActivity::clear_screen() {
-    system("cls"); // template
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
 }
 
 void ClientActivity::input_thread() {
@@ -159,7 +163,7 @@ void ClientActivity::init_new_chat(const string &name) {
     if (new_chat_info_json["status"] != "new_chat_failed") {
         vector<unsigned char> public_key = convert_public_key(new_chat_info_json["data"]["public_key"]);
 
-        generate_secret_initial("gen_key_" + name + ".data", password_hash, private_key, public_key);
+        generate_secret_initial(gen_key_file(name), password_hash, private_key, public_key);
     } else {
         cout << name << " doesn`t exist on a server." << endl;
     }
@@ -185,11 +189,11 @@ void ClientActivity::send_new_message(const string &name) {
         cout << "Type message: " << endl;
         std::getline(cin, message);
 
-        if (!check_exist_gen_key("gen_key_" + name + ".data")) {
+        if (!check_exist_gen_key(gen_key_file(name))) {
             cout << "Failed send new message to " << name << " because sync has not occurred yet";
         } else {
             if (!general_keys.contains(name)) {
-                general_keys[name] = load_secret_initial("gen_key_" + name + ".data", password_hash);
+                general_keys[name] = load_secret_initial(gen_key_file(name), password_hash);
             }
 
             vector<unsigned char> nonce(crypto_secretbox_NONCEBYTES);
@@ -269,10 +273,10 @@ void ClientActivity::sync_cloud() {
 
                 string public_key_string = user["public_key"];
 
-                if (!check_exist_gen_key("gen_key_" + name + ".data")) {
+                if (!check_exist_gen_key(gen_key_file(name))) {
                     vector<unsigned char> public_key = convert_public_key(public_key_string);
 
-                    generate_secret_initial("gen_key_" + name + ".data", password_hash, private_key, public_key);
+                    generate_secret_initial(gen_key_file(name), password_hash, private_key, public_key);
                 }
             } else {
                 status_info["status"] = "n";
@@ -309,10 +313,10 @@ void ClientActivity::sync_cloud() {
                 int last_message_id = get_last_message_from_bd(name_init, name).message_id;
                 int last_message_sync_id = user["message_id"];
 
-                if (!check_exist_gen_key("gen_key_" + name + ".data")) {
+                if (!check_exist_gen_key(gen_key_file(name))) {
                     vector<unsigned char> public_key = convert_public_key(public_key_string);
 
-                    generate_secret_initial("gen_key_" + name + ".data", password_hash, private_key, public_key);
+                    generate_secret_initial(gen_key_file(name), password_hash, private_key, public_key);
                 }
 
                 if (last_message_id < last_message_sync_id) {
@@ -326,7 +330,7 @@ void ClientActivity::sync_cloud() {
                 }
 
                 if (!general_keys.contains(name)) {
-                    general_keys[name] = load_secret_initial("gen_key_" + name + ".data", password_hash);
+                    general_keys[name] = load_secret_initial(gen_key_file(name), password_hash);
                 }
             }
         }
@@ -521,5 +525,8 @@ void ClientActivity::main_thread() {
         } catch (const exception &e) {
             cout << "Client error: " << e.what() << endl;
         }
+
+        // Don't spin a CPU core at 100% between commands and sync ticks.
+        this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 }

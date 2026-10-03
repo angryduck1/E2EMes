@@ -48,6 +48,9 @@ private:
 
     std::mutex mtx;
 
+    // sqlite_orm storage is not thread-safe; every client thread goes through this lock.
+    std::mutex db_mtx;
+
     any storage;
 
     static auto create_storage(const string& file_name) {

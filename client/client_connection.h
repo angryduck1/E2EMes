@@ -39,4 +39,6 @@ string decryption_message(vector<unsigned char>& message_hex, vector<unsigned ch
 
 bool check_exist_gen_key(const string& name);
 
+string gen_key_file(const string& name);
+
 #endif //E2EMES_CLIENT_CONNECTION_H

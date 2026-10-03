@@ -37,6 +37,11 @@ int load_binary_key(const string& file_name, unsigned char* key, size_t key_len)
 
     file.read(reinterpret_cast<char*>(key), key_len);
 
+    if (file.gcount() != static_cast<streamsize>(key_len)) {
+        cerr << "Key file " << file_name << " is too short" << endl;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -80,13 +85,53 @@ string generate_chat_id() {
     return b64_buffer;
 }
 
+bool is_valid_name(const string& name) {
+    if (name.size() < 3 || name.size() > 32) {
+        return false;
+    }
+
+    // Names end up in client file names (gen_key_<name>.data), so keep them strictly alphanumeric.
+    for (char ch : name) {
+        if (!isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-') {
+            return false;
+        }
+    }
+
+    return name != "EMPTY_CHAT_ID" && name != "EMPTY_SESSION_ID";
+}
+
+string hash_password(const string& password) {
+    char hash[crypto_pwhash_STRBYTES];
+
+    if (crypto_pwhash_str(hash, password.data(), password.size(), crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE) != 0) {
+        throw runtime_error("Failed to hash password");
+    }
+
+    return string(hash);
+}
+
+bool verify_password(const string& password, const string& stored, const string& chat_id, Redis& redis) {
+    if (stored.rfind("$argon2", 0) == 0) {
+        return crypto_pwhash_str_verify(stored.c_str(), password.data(), password.size()) == 0;
+    }
+
+    // Accounts created before hashing was introduced keep a plain password: check it in constant time and upgrade.
+    bool ok = stored.size() == password.size() && sodium_memcmp(stored.data(), password.data(), stored.size()) == 0;
+
+    if (ok) {
+        redis.hset("chat_ids:" + chat_id, "password", hash_password(password));
+    }
+
+    return ok;
+}
+
 void add_session_to_bd(const string& session_id, const string& chat_id, Redis& redis) {
     redis.hset("sessions:" + session_id, "chat_id", chat_id);
 }
 
 void add_user_info_to_bd(const string& password, const string& name, const string& chat_id, const string& session_id, const string& hex_salt, const string& public_key, Redis& redis) {
     redis.hset("chat_ids:" + chat_id, "name", name);
-    redis.hset("chat_ids:" + chat_id, "password", password);
+    redis.hset("chat_ids:" + chat_id, "password", hash_password(password));
     redis.hset("chat_ids:" + chat_id, "salt", hex_salt);
     redis.hset("chat_ids:" + chat_id, "public_key", public_key);
 
@@ -98,8 +143,6 @@ void add_user_info_to_bd(const string& password, const string& name, const strin
     redis.sadd("chat_list:" + chat_id, "EMPTY_CHAT_ID");
 
     redis.sadd("chats_ids_сounter", chat_id);
-
-    redis.set("names:" + name, chat_id);
 }
 
 void clear_sessions(Redis& redis) {
@@ -188,40 +231,40 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
 
             int attempts = 5;
 
-            while (attempts > 0) {
-                if (redis.exists("names:"+name)) {
-                    json created_account = {
-                        {"status", "retype_name"},
-                        {"code", 200},
-                        {"data", "This name already exists. " + to_string(attempts) + " left."}
+            // SETNX reserves the name atomically, so two registrations can't grab the same name
+            // and an existing account can't be overwritten.
+            while (!is_valid_name(name) || !redis.setnx("names:" + name, new_chat_id)) {
+                if (attempts == 0) {
+                    json timeout_message = {
+                        {"status", "timeout_exceeded"},
+                        {"code", 300},
+                        {"data", "This name already exists"}
                     };
 
-                    vector<unsigned char> created_account_send = connections.pack_data(created_account);
-                    connections.send_package(created_account_send, cryption, session, *socket);
+                    vector<unsigned char> timeout_message_send = connections.pack_data(timeout_message);
 
-                    vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
-                    json user_info_json = nlohmann::json::parse(user_info.begin(), user_info.end());
+                    connections.send_package(timeout_message_send, cryption, session, *socket);
 
-                    name = user_info_json["data"]["name"];
-
-                    --attempts;
-
-                    this_thread::sleep_for(std::chrono::seconds(4));
-                } else {
-                    break;
+                    return;
                 }
-            }
 
-            if (attempts == 0) {
-                json timeout_message = {
-                    {"status", "timeout_exceeded"},
-                    {"code", 300},
-                    {"data", "This name already exists"}
+                json created_account = {
+                    {"status", "retype_name"},
+                    {"code", 200},
+                    {"data", "This name already exists or is invalid (3-32 symbols: a-z, 0-9, _ or -). " + to_string(attempts) + " left."}
                 };
 
-                vector<unsigned char> timeout_message_send = connections.pack_data(timeout_message);
+                vector<unsigned char> created_account_send = connections.pack_data(created_account);
+                connections.send_package(created_account_send, cryption, session, *socket);
 
-                connections.send_package(timeout_message_send, cryption, session, *socket);
+                vector<unsigned char> user_info = connections.recv_package(cryption, session, *socket);
+                json user_info_json = nlohmann::json::parse(user_info.begin(), user_info.end());
+
+                name = user_info_json.at("data").at("name");
+
+                --attempts;
+
+                this_thread::sleep_for(std::chrono::seconds(4));
             }
 
             connections.add_session(new_session_id, socket, session);
@@ -252,7 +295,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
             vector<unsigned char> created_account_send = connections.pack_data(created_account);
             connections.send_package(created_account_send, cryption, session, *socket);
 
-            throw exception("Invalid signature user_info");
+            throw runtime_error("Invalid signature user_info");
         }
     } else if (log_id_data_resp_json["code"] == 200 && log_id_data_resp_json["status"] == "current_id") {
         string token_id = log_id_data_resp_json["data"]["id"];
@@ -282,35 +325,37 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         string password = log_id_data_resp_json["data"]["password"];
         string name = log_id_data_resp_json["data"]["name"];
 
-        if (redis.exists("names:"+name)) {
-            string chat_id = *redis.get("names:"+name);
-            string password_chat_id = *redis.hget("chat_ids:" + chat_id, "password");
+        auto chat_id_opt = redis.get("names:" + name);
+        auto password_chat_id = chat_id_opt ? redis.hget("chat_ids:" + *chat_id_opt, "password") : OptionalString();
+
+        if (chat_id_opt && password_chat_id) {
+            string chat_id = *chat_id_opt;
 
             int attempts = 3;
 
-            while (attempts > 0) {
-                if (password != password_chat_id) {
-                    json reply_message_json = {
-                        {"status", "reply_message"},
-                        {"code", 400},
-                        {"data", "You have " + to_string(attempts) + " attempts"}
-                    };
+            bool password_ok = verify_password(password, *password_chat_id, chat_id, redis);
 
-                    vector<unsigned char> reply_message_send = connections.pack_data(reply_message_json);
-                    connections.send_package(reply_message_send, cryption, session, *socket);
+            while (!password_ok && attempts > 0) {
+                json reply_message_json = {
+                    {"status", "reply_message"},
+                    {"code", 400},
+                    {"data", "You have " + to_string(attempts) + " attempts"}
+                };
 
-                    attempts -= 1;
+                vector<unsigned char> reply_message_send = connections.pack_data(reply_message_json);
+                connections.send_package(reply_message_send, cryption, session, *socket);
 
-                    vector<unsigned char> retry_login = connections.recv_package(cryption, session, *socket);
-                    json retry_login_json = nlohmann::json::parse(retry_login);
+                attempts -= 1;
 
-                    password = retry_login_json["data"]["password"];
-                } else {
-                    break;
-                }
+                vector<unsigned char> retry_login = connections.recv_package(cryption, session, *socket);
+                json retry_login_json = nlohmann::json::parse(retry_login);
+
+                password = retry_login_json.at("data").at("password");
+
+                password_ok = verify_password(password, *password_chat_id, chat_id, redis);
             }
 
-            if (attempts == 0) {
+            if (!password_ok) {
                 json login_message_json = {
                     {"status", "login_message"},
                     {"code", 300},
@@ -336,8 +381,8 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
                 add_session_to_bd(new_session_id, chat_id, redis);
                 redis.sadd("status:" + chat_id, new_session_id);
 
-                string hex_salt = *redis.hget("chat_ids:"+chat_id, "salt");
-                string public_key = *redis.hget("chat_ids:"+chat_id, "public_key");
+                string hex_salt = redis.hget("chat_ids:" + chat_id, "salt").value_or("");
+                string public_key = redis.hget("chat_ids:" + chat_id, "public_key").value_or("");
 
                 json new_token_id_json = {
                     {"status", "new_id"},
@@ -362,7 +407,7 @@ void login(shared_ptr<tcp::socket> socket, Cryption& cryption, Connections& conn
         }
     }
     else {
-        throw exception("Invalid signature session authorize");
+        throw runtime_error("Invalid signature session authorize");
     }
 }
 
@@ -386,10 +431,12 @@ int main() {
 
     if (load_binary_key("open_key.bin", cryption.pk, crypto_kx_PUBLICKEYBYTES) != 0) {
         cerr << "Failed read PK" << endl;
+        return -1;
     }
 
     if (load_binary_key("secret_key.bin", cryption.sk, crypto_kx_SECRETKEYBYTES) != 0) {
         cerr << "Failed read SK" << endl;
+        return -1;
     }
 
     Redis redis("tcp://127.0.0.1:6400");
