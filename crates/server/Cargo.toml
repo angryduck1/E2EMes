@@ -1,0 +1,30 @@
+[package]
+name = "e2emes-server"
+description = "E2EMes server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "e2emes-server"
+path = "src/main.rs"
+
+[dependencies]
+e2emes-proto.workspace = true
+e2emes-crypto.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+rusqlite.workspace = true
+argon2.workspace = true
+rand.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+e2emes-client.workspace = true
+e2emes-crypto.workspace = true

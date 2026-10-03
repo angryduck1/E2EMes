@@ -1,0 +1,14 @@
+[package]
+name = "e2emes-proto"
+description = "Wire protocol of E2EMes: message types, framing and the encrypted transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+snow.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+hex.workspace = true

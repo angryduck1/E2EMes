@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = ["crates/proto", "crates/crypto", "crates/server", "crates/client"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+authors = ["BinBin"]
+
+[workspace.dependencies]
+e2emes-proto = { path = "crates/proto" }
+e2emes-crypto = { path = "crates/crypto" }
+e2emes-client = { path = "crates/client" }
+e2emes-server = { path = "crates/server" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+snow = "0.9"
+rand = "0.8"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+chacha20poly1305 = "0.10"
+argon2 = { version = "0.5", features = ["std"] }
+blake2 = "0.10"
+sha2 = "0.10"
+hkdf = "0.12"
+bip39 = { version = "2", features = ["rand"] }
+zeroize = { version = "1", features = ["derive"] }
+hex = "0.4"
+base64 = "0.22"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rpassword = "7"
+
+# Argon2 and the ciphers are painfully slow unoptimized; keep debug builds and tests fast.
+[profile.dev.package."*"]
+opt-level = 2

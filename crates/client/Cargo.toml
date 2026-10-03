@@ -1,0 +1,24 @@
+[package]
+name = "e2emes-client"
+description = "E2EMes console client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "e2emes"
+path = "src/main.rs"
+
+[dependencies]
+e2emes-proto.workspace = true
+e2emes-crypto.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+rusqlite.workspace = true
+hex.workspace = true
+clap.workspace = true
+rpassword.workspace = true
+zeroize.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

@@ -1,2 +1,8 @@
-./ClientDir2
-./ClientDir2/client.exe
+/target
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.key
+*.pub
+/e2emes-data
